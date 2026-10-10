@@ -9,15 +9,19 @@ export default function Navbar() {
     <header className="sticky top-0 z-40 border-b border-mtg-gold/25 bg-mtg-void/85 backdrop-blur-md">
       <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-mtg-gold bg-mtg-ink gold-glow">
-            <span className="font-display text-lg text-mtg-gold-bright">✦</span>
-          </div>
-          <div>
-            <h1 className="font-display text-xl font-bold tracking-wide text-gold-gradient md:text-2xl">
-              Ruleta Lirón
-            </h1>
-            <p className="text-xs text-mtg-frost/70 md:text-sm">
-              Sorteos MTG · {participants.length} jugadores · {prizes.length} premios
+          <img
+            src="/brand/liron-icon.png"
+            alt="El Lirón"
+            className="h-12 w-12 rounded-full border-2 border-mtg-gold object-cover gold-glow md:h-14 md:w-14"
+          />
+          <div className="min-w-0">
+            <img
+              src="/brand/liron-logo.png"
+              alt="El Lirón"
+              className="h-8 w-auto max-w-[180px] object-contain object-left md:h-10 md:max-w-[220px]"
+            />
+            <p className="mt-0.5 text-xs text-mtg-frost/70 md:text-sm">
+              Ruleta · Sorteos MTG · {participants.length} jugadores · {prizes.length} premios
             </p>
           </div>
         </div>

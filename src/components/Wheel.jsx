@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import confetti from "canvas-confetti";
 import { playTick, playVictoryFanfare } from "../lib/audio";
 import { sectorAtPointer } from "../lib/fairRandom";
-import { WHEEL_COLORS } from "../lib/constants";
+import { randomWheelColors, WHEEL_COLORS } from "../lib/constants";
 
 function easeOutCubic(t) {
   return 1 - (1 - t) ** 3;
@@ -12,10 +12,17 @@ function easeOutQuint(t) {
   return 1 - (1 - t) ** 5;
 }
 
-function lighten(hex, amount = 0.22) {
-  const n = String(hex || "#1e3a5f").replace("#", "");
+function lighten(color, amount = 0.22) {
+  const hsl = String(color).match(/hsl\(\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*\)/i);
+  if (hsl) {
+    const h = Number(hsl[1]);
+    const s = Number(hsl[2]);
+    const l = Math.min(52, Number(hsl[3]) + amount * 100);
+    return `hsl(${h} ${s}% ${l}%)`;
+  }
+  const n = String(color || "#1e3a5f").replace("#", "");
   const num = Number.parseInt(n.length === 3 ? n.split("").map((c) => c + c).join("") : n, 16);
-  if (Number.isNaN(num)) return hex;
+  if (Number.isNaN(num)) return color;
   const r = Math.min(255, ((num >> 16) & 255) + Math.round(255 * amount));
   const g = Math.min(255, ((num >> 8) & 255) + Math.round(255 * amount));
   const b = Math.min(255, (num & 255) + Math.round(255 * amount));
@@ -46,10 +53,23 @@ export default function Wheel({
   const participantsRef = useRef(participants);
   const sizeRef = useRef(size);
   const onCompleteRef = useRef(onSpinComplete);
+  const hubLogoRef = useRef(null);
+  const colorsRef = useRef([]);
+  const colorsKeyRef = useRef("");
 
   participantsRef.current = participants;
   sizeRef.current = size;
   onCompleteRef.current = onSpinComplete;
+
+  const ensureColors = (list) => {
+    const key = list.join("\0");
+    if (colorsKeyRef.current !== key || colorsRef.current.length !== list.length) {
+      colorsKeyRef.current = key;
+      colorsRef.current =
+        list.length > 0 ? randomWheelColors(list.length) : [];
+    }
+    return colorsRef.current;
+  };
 
   const draw = (rotation, highlightName = null) => {
     const canvas = canvasRef.current;
@@ -57,6 +77,7 @@ export default function Wheel({
 
     const list = participantsRef.current || [];
     const n = list.length;
+    const sectorColors = ensureColors(list);
     const cssSize = sizeRef.current;
     const slice = n > 0 ? (Math.PI * 2) / n : 0;
 
@@ -77,22 +98,22 @@ export default function Wheel({
 
     ctx.beginPath();
     ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
-    ctx.strokeStyle = "#d4af37";
+    ctx.strokeStyle = "#9bb59f";
     ctx.lineWidth = 6;
     ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(cx, cy, radius + 1, 0, Math.PI * 2);
-    ctx.strokeStyle = "#f0d78c";
+    ctx.strokeStyle = "#e8f0ea";
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     if (n === 0) {
-      ctx.fillStyle = "#1a2740";
+      ctx.fillStyle = "#2f4036";
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "#f0d78c";
+      ctx.fillStyle = "#e8f0ea";
       ctx.font = "600 18px 'Source Sans 3', sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -107,18 +128,18 @@ export default function Wheel({
 
     if (n === 1) {
       const isWinner = winnerIdx === 0;
-      const base = WHEEL_COLORS[0];
+      const base = sectorColors[0] || WHEEL_COLORS[0];
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.closePath();
       ctx.fillStyle = isWinner ? lighten(base, 0.35) : base;
       ctx.fill();
-      ctx.strokeStyle = isWinner ? "#f0d78c" : "rgba(212, 175, 55, 0.35)";
+      ctx.strokeStyle = isWinner ? "#e8f0ea" : "rgba(155, 181, 159, 0.4)";
       ctx.lineWidth = isWinner ? 3 : 1;
       ctx.stroke();
 
       if (list[0]) {
-        ctx.fillStyle = isWinner ? "#fff8e7" : "#e8eef8";
+        ctx.fillStyle = isWinner ? "#e8f0ea" : "#eef3ef";
         ctx.font = "700 18px 'Source Sans 3', sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -134,7 +155,7 @@ export default function Wheel({
         const start = rotation + i * slice - slice / 2;
         const end = start + slice;
         const isWinner = winnerIdx === i;
-        const base = WHEEL_COLORS[i % WHEEL_COLORS.length];
+        const base = sectorColors[i] || WHEEL_COLORS[i % WHEEL_COLORS.length];
 
         ctx.beginPath();
         ctx.moveTo(cx, cy);
@@ -142,7 +163,7 @@ export default function Wheel({
         ctx.closePath();
         ctx.fillStyle = isWinner ? lighten(base, 0.35) : base;
         ctx.fill();
-        ctx.strokeStyle = isWinner ? "#f0d78c" : "rgba(212, 175, 55, 0.35)";
+        ctx.strokeStyle = isWinner ? "#e8f0ea" : "rgba(155, 181, 159, 0.4)";
         ctx.lineWidth = isWinner ? 3 : 1;
         ctx.stroke();
 
@@ -154,7 +175,7 @@ export default function Wheel({
           ctx.rotate(mid);
           ctx.textAlign = "right";
           ctx.textBaseline = "middle";
-          ctx.fillStyle = isWinner ? "#fff8e7" : "#e8eef8";
+          ctx.fillStyle = isWinner ? "#e8f0ea" : "#eef3ef";
           const fontSize = n > 40 ? 9 : n > 24 ? 11 : n > 14 ? 13 : 15;
           ctx.font = `${isWinner ? 800 : 700} ${fontSize}px 'Source Sans 3', sans-serif`;
           const label = String(list[i]);
@@ -169,34 +190,56 @@ export default function Wheel({
       }
     }
 
-    const hubGrad = ctx.createRadialGradient(cx, cy, 4, cx, cy, 36);
-    hubGrad.addColorStop(0, "#f0d78c");
-    hubGrad.addColorStop(1, "#9a7b2f");
+    // Centro con logo El Lirón
     ctx.beginPath();
-    ctx.arc(cx, cy, 34, 0, Math.PI * 2);
-    ctx.fillStyle = hubGrad;
+    ctx.arc(cx, cy, 36, 0, Math.PI * 2);
+    ctx.fillStyle = "#455a49";
     ctx.fill();
-    ctx.strokeStyle = "#1a1204";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#9bb59f";
+    ctx.lineWidth = 3;
     ctx.stroke();
-    ctx.fillStyle = "#1a1204";
-    ctx.font = "700 11px Cinzel, serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("MTG", cx, cy);
 
-    // Punto dorado en el borde bajo la flecha: marca el sector elegido
+    const hubLogo = hubLogoRef.current;
+    if (hubLogo?.complete) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(hubLogo, cx - 30, cy - 30, 60, 60);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#e8f0ea";
+      ctx.font = "700 11px Cinzel, serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("LIRÓN", cx, cy);
+    }
+
+    // Punto en el borde bajo la flecha: marca el sector elegido
     if (winnerIdx >= 0) {
       ctx.save();
       ctx.beginPath();
       ctx.arc(cx + radius - 2, cy, 7, 0, Math.PI * 2);
-      ctx.fillStyle = "#f0d78c";
-      ctx.shadowColor = "rgba(240, 215, 140, 0.85)";
+      ctx.fillStyle = "#e8f0ea";
+      ctx.shadowColor = "rgba(232, 240, 234, 0.85)";
       ctx.shadowBlur = 12;
       ctx.fill();
       ctx.restore();
     }
   };
+
+  // Logo del hub
+  useEffect(() => {
+    const img = new Image();
+    img.src = "/brand/liron-icon.png";
+    img.onload = () => {
+      hubLogoRef.current = img;
+      if (!spinningRef.current) {
+        draw(angleRef.current, null);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Redibujar en reposo cuando cambian datos
   useEffect(() => {
@@ -272,7 +315,7 @@ export default function Wheel({
         draw(finalRot, resolvedWinner);
 
         if (confettiEnabled) {
-          const colors = ["#d4af37", "#f0d78c", "#5b9fd4", "#d45b4a", "#4a9a5b"];
+          const colors = ["#455a49", "#9bb59f", "#e8f0ea", "#6d8575", "#d4b896"];
           try {
             confetti({ particleCount: 120, spread: 80, origin: { y: 0.35 }, colors });
             confetti({
@@ -314,14 +357,14 @@ export default function Wheel({
         aria-hidden
       >
         <div
-          className="h-0 w-0 border-t-[14px] border-b-[14px] border-r-[28px] border-t-transparent border-b-transparent border-r-mtg-gold"
-          style={{ filter: "drop-shadow(0 0 6px rgba(212,175,55,0.7))" }}
+          className="h-0 w-0 border-t-[14px] border-b-[14px] border-r-[28px] border-t-transparent border-b-transparent border-r-mtg-gold-bright"
+          style={{ filter: "drop-shadow(0 0 6px rgba(155,181,159,0.75))" }}
         />
       </div>
 
       <canvas
         ref={canvasRef}
-        className="rounded-full shadow-[0_0_40px_rgba(212,175,55,0.2)]"
+        className="rounded-full shadow-[0_0_40px_rgba(69,90,73,0.45)]"
         width={size}
         height={size}
       />

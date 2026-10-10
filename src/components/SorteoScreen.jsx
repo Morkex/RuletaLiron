@@ -62,7 +62,7 @@ export default function SorteoScreen() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(212,175,55,0.12),transparent_55%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(155,181,159,0.14),transparent_55%)]" />
         <div className="relative flex flex-col items-center gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
             {currentPrize ? (

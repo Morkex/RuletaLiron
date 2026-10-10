@@ -21,8 +21,17 @@ function AppShell() {
       </main>
       <FairPlayModal />
       <WinnerModal />
-      <footer className="border-t border-mtg-gold/15 px-4 py-4 text-center text-xs text-mtg-frost/40">
-        Ruleta El Lirón
+      <footer className="border-t border-mtg-gold/15 px-4 py-5 text-center">
+        <div className="mx-auto flex flex-col items-center gap-2">
+          <img
+            src="/brand/liron-logo.png"
+            alt="El Lirón"
+            className="h-7 w-auto opacity-90"
+          />
+          <p className="text-xs text-mtg-frost/45">
+            Juegos, Café y Libros · Ruleta de sorteos MTG
+          </p>
+        </div>
       </footer>
     </div>
   );

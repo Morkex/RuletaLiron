@@ -16,7 +16,7 @@ function packSvg(title, c1, c2, accent) {
   <rect x="8" y="8" width="224" height="324" rx="10" fill="url(#shine)"/>
   <rect x="28" y="40" width="184" height="120" rx="6" fill="rgba(0,0,0,0.35)" stroke="${accent}" stroke-width="1.5"/>
   <text x="120" y="210" text-anchor="middle" fill="${accent}" font-family="Georgia, serif" font-size="18" font-weight="700">${title}</text>
-  <text x="120" y="238" text-anchor="middle" fill="#f0d78c" font-family="Georgia, serif" font-size="12" letter-spacing="2">BOOSTER PACK</text>
+  <text x="120" y="238" text-anchor="middle" fill="#e8f0ea" font-family="Georgia, serif" font-size="12" letter-spacing="2">BOOSTER PACK</text>
   <circle cx="120" cy="280" r="18" fill="none" stroke="${accent}" stroke-width="2"/>
   <path d="M120 268 L124 278 L136 278 L126 286 L130 298 L120 290 L110 298 L114 286 L104 278 L116 278 Z" fill="${accent}"/>
 </svg>`;
@@ -71,18 +71,57 @@ export const CONFIG_DEFAULTS = {
   musicEnabled: false,
 };
 
+/**
+ * Paleta de respaldo. En la ruleta se usan colores aleatorios
+ * generados con randomWheelColors().
+ */
 export const WHEEL_COLORS = [
   "#1e3a5f",
-  "#3d1f3d",
-  "#1f3d2e",
-  "#4a2c1a",
-  "#2a2a4a",
-  "#3d2e1f",
-  "#1a3d3d",
-  "#4a1a2e",
-  "#2e3d1a",
-  "#1a2e4a",
+  "#6b2d3c",
+  "#2d5a3d",
+  "#5c3d1e",
+  "#3d2a5c",
+  "#1a4a4a",
+  "#5a2a4a",
+  "#4a4a1e",
+  "#2a3d5c",
+  "#5c1e2e",
+  "#1e4a2e",
+  "#4a2e1e",
+  "#2e1e4a",
+  "#1e3d4a",
+  "#4a3d1e",
+  "#3d1e3d",
 ];
+
+/** Genera N colores oscuros y saturados (legibles con texto claro). */
+export function randomWheelColors(count) {
+  if (count <= 0) return [];
+  const colors = [];
+  const usedHues = [];
+
+  for (let i = 0; i < count; i++) {
+    const buf = new Uint32Array(2);
+    crypto.getRandomValues(buf);
+
+    let hue = buf[0] % 360;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const tooClose = usedHues.some((h) => {
+        const d = Math.min(Math.abs(h - hue), 360 - Math.abs(h - hue));
+        return d < 28;
+      });
+      if (!tooClose || usedHues.length === 0) break;
+      hue = (hue + 47 + (buf[1] % 30)) % 360;
+    }
+    usedHues.push(hue);
+
+    const sat = 48 + (buf[1] % 28);
+    const light = 26 + (buf[0] % 14);
+    colors.push(`hsl(${hue} ${sat}% ${light}%)`);
+  }
+
+  return colors;
+}
 
 export const TABS = [
   { id: "sorteo", label: "Sorteo / Ruleta" },
