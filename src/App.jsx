@@ -7,6 +7,8 @@ import Prizes from "./components/Prizes";
 import Config from "./components/Config";
 import FairPlayModal from "./components/FairPlayModal";
 import WinnerModal from "./components/WinnerModal";
+import RoomDisplayScreen from "./components/RoomDisplayScreen";
+import { isSalaDisplayMode } from "./lib/salaDisplay";
 
 function AppShell() {
   const { tab } = useApp();
@@ -40,6 +42,10 @@ function AppShell() {
 }
 
 export default function App() {
+  if (isSalaDisplayMode()) {
+    return <RoomDisplayScreen />;
+  }
+
   return (
     <AppProvider>
       <AppShell />

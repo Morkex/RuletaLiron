@@ -19,6 +19,8 @@ export const COMMANDER_CONFIG_DEFAULTS = {
   maxRepeatFromPrevious: 2,
   maxAttempts: 800,
   tableLabelPrefix: "Mesa",
+  /** Tope de mesas en modo auto (p. ej. mesas físicas del plano). 0 = sin tope */
+  maxTableCount: 0,
 };
 
 export function normalizeCommanderConfig(partial = {}) {
@@ -31,6 +33,7 @@ export function normalizeCommanderConfig(partial = {}) {
     minPerTable: min,
     maxPerTable: max,
     fixedTableCount: Math.max(1, Math.min(20, Number(c.fixedTableCount) || 1)),
+    maxTableCount: Math.max(0, Math.min(20, Number(c.maxTableCount) || 0)),
     maxRepeatFromPrevious: Math.max(
       0,
       Math.min(8, Number(c.maxRepeatFromPrevious) || 0),
@@ -92,14 +95,20 @@ export function computeTableSizes(n, configInput = {}) {
   }
 
   // auto: nº de mesas viable
-  const tMin = Math.ceil(n / max);
-  const tMax = Math.floor(n / min);
+  let tMin = Math.ceil(n / max);
+  let tMax = Math.floor(n / min);
+
+  // Tope por mesas físicas del plano (no obliga a usarlas todas)
+  if (cfg.maxTableCount > 0) {
+    tMax = Math.min(tMax, cfg.maxTableCount);
+  }
 
   if (tMin > tMax) {
     if (cfg.allowOversizedFallback && n >= min) return [n];
     return [];
   }
 
+  // preferLargerTables → menos mesas, más llenas (15 → 4+4+4+3, no 5×3)
   const t = cfg.preferLargerTables ? tMin : tMax;
   return sizesFromTableCount(n, t, min, max);
 }
@@ -119,8 +128,46 @@ export function violatesRepeatRule(tablePlayers, previousTables, maxRepeat) {
   return false;
 }
 
-export function tablesAreValid(tables, previousTables, cfg) {
+/** ¿Hay alguna pareja prohibida juntos en esta mesa? */
+export function violatesAvoidPairs(tablePlayers, avoidPairs) {
+  if (!avoidPairs?.length) return false;
+  const set = new Set(
+    tablePlayers.map((p) => String(p).toLocaleLowerCase("es")),
+  );
+  for (const pair of avoidPairs) {
+    const a = String(pair?.a || "")
+      .trim()
+      .toLocaleLowerCase("es");
+    const b = String(pair?.b || "")
+      .trim()
+      .toLocaleLowerCase("es");
+    if (a && b && a !== b && set.has(a) && set.has(b)) return true;
+  }
+  return false;
+}
+
+export function normalizeAvoidPairs(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const p of raw) {
+    const a = String(p?.a || "").trim();
+    const b = String(p?.b || "").trim();
+    if (!a || !b) continue;
+    const ka = a.toLocaleLowerCase("es");
+    const kb = b.toLocaleLowerCase("es");
+    if (ka === kb) continue;
+    const key = [ka, kb].sort().join("\0");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ a, b });
+  }
+  return out;
+}
+
+export function tablesAreValid(tables, previousTables, cfg, avoidPairs = []) {
   const config = normalizeCommanderConfig(cfg);
+  const pairs = normalizeAvoidPairs(avoidPairs);
   return tables.every((t) => {
     const n = t.players.length;
     const sizeOk =
@@ -128,6 +175,7 @@ export function tablesAreValid(tables, previousTables, cfg) {
       (n <= config.maxPerTable ||
         (config.allowOversizedFallback && tables.length === 1));
     if (!sizeOk) return false;
+    if (violatesAvoidPairs(t.players, pairs)) return false;
     if (!config.avoidRepeatEnabled) return true;
     return !violatesRepeatRule(
       t.players,
@@ -152,14 +200,20 @@ function carve(shuffled, sizes, labelPrefix) {
 }
 
 /**
- * Genera mesas aleatorias respetando config y anti-repetición.
+ * Genera mesas aleatorias respetando config, anti-repetición y parejas a evitar.
+ * @param {string[]} players
+ * @param {string[][]} previousTables
+ * @param {object} configInput
+ * @param {{a:string,b:string}[]} [avoidPairs]
  */
 export function assignCommanderTables(
   players,
   previousTables = [],
   configInput = {},
+  avoidPairs = [],
 ) {
   const cfg = normalizeCommanderConfig(configInput);
+  const pairs = normalizeAvoidPairs(avoidPairs);
 
   const unique = [];
   const seen = new Set();
@@ -188,14 +242,22 @@ export function assignCommanderTables(
     );
   }
 
+  // Con una sola mesa es imposible separar parejas.
+  if (pairs.length && sizes.length < 2) {
+    throw new Error(
+      "Hay parejas a evitar pero solo hay una mesa: no se pueden separar.",
+    );
+  }
+
   const entropyBuf = new Uint32Array(1);
   crypto.getRandomValues(entropyBuf);
   const entropy = entropyBuf[0];
 
-  const needsRepeatCheck =
-    cfg.avoidRepeatEnabled && previousTables?.length > 0;
+  const needsConstraintSearch =
+    pairs.length > 0 ||
+    (cfg.avoidRepeatEnabled && previousTables?.length > 0);
 
-  if (!needsRepeatCheck) {
+  if (!needsConstraintSearch) {
     const shuffled = cryptoShuffle(unique);
     return {
       tables: carve(shuffled, sizes, cfg.tableLabelPrefix),
@@ -205,6 +267,7 @@ export function assignCommanderTables(
       relaxed: false,
       playerCount: unique.length,
       config: cfg,
+      avoidPairs: pairs,
     };
   }
 
@@ -212,7 +275,7 @@ export function assignCommanderTables(
   for (; attempts < cfg.maxAttempts; attempts++) {
     const shuffled = cryptoShuffle(unique);
     const tables = carve(shuffled, sizes, cfg.tableLabelPrefix);
-    if (tablesAreValid(tables, previousTables, cfg)) {
+    if (tablesAreValid(tables, previousTables, cfg, pairs)) {
       return {
         tables,
         sizes,
@@ -221,8 +284,33 @@ export function assignCommanderTables(
         relaxed: false,
         playerCount: unique.length,
         config: cfg,
+        avoidPairs: pairs,
       };
     }
+  }
+
+  // Relajado: prioriza cumplir parejas a evitar sobre anti-repetición.
+  if (pairs.length) {
+    for (let i = 0; i < cfg.maxAttempts; i++) {
+      const shuffled = cryptoShuffle(unique);
+      const tables = carve(shuffled, sizes, cfg.tableLabelPrefix);
+      const pairsOk = tables.every((t) => !violatesAvoidPairs(t.players, pairs));
+      if (pairsOk) {
+        return {
+          tables,
+          sizes,
+          attempts: cfg.maxAttempts + i + 1,
+          entropy,
+          relaxed: true,
+          playerCount: unique.length,
+          config: cfg,
+          avoidPairs: pairs,
+        };
+      }
+    }
+    throw new Error(
+      "No se pudo separar todas las parejas a evitar con este número de mesas. Revisa las restricciones o el plano.",
+    );
   }
 
   const shuffled = cryptoShuffle(unique);
@@ -234,6 +322,7 @@ export function assignCommanderTables(
     relaxed: true,
     playerCount: unique.length,
     config: cfg,
+    avoidPairs: pairs,
   };
 }
 

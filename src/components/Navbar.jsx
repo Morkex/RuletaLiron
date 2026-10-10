@@ -1,19 +1,48 @@
+import { useRef, useState } from "react";
 import { TABS } from "../lib/constants";
 import { useApp } from "../context/AppContext";
+import LironRunnerGame from "./LironRunnerGame";
+
+const EGG_CLICKS = 7;
+const EGG_WINDOW_MS = 2500;
 
 export default function Navbar() {
   const { tab, setTab, toggleMusic, config, setShowFairPlay, participants, prizes } =
     useApp();
+  const [showRunner, setShowRunner] = useState(false);
+  const clicksRef = useRef({ count: 0, timer: null });
+
+  const onLogoEggClick = () => {
+    const bag = clicksRef.current;
+    bag.count += 1;
+    if (bag.timer) clearTimeout(bag.timer);
+    bag.timer = setTimeout(() => {
+      bag.count = 0;
+    }, EGG_WINDOW_MS);
+    if (bag.count >= EGG_CLICKS) {
+      bag.count = 0;
+      if (bag.timer) clearTimeout(bag.timer);
+      setShowRunner(true);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 border-b border-mtg-gold/25 bg-mtg-void/85 backdrop-blur-md">
       <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
         <div className="flex items-center gap-3">
-          <img
-            src="/brand/liron-icon.png"
-            alt="El Lirón"
-            className="h-12 w-12 rounded-full border-2 border-mtg-gold object-cover gold-glow md:h-14 md:w-14"
-          />
+          <button
+            type="button"
+            onClick={onLogoEggClick}
+            className="rounded-full p-0 transition hover:scale-105 active:scale-95"
+            aria-label="El Lirón"
+          >
+            <img
+              src="/brand/liron-icon.png"
+              alt="El Lirón"
+              className="h-12 w-12 rounded-full border-2 border-mtg-gold object-cover gold-glow md:h-14 md:w-14"
+              draggable={false}
+            />
+          </button>
           <div className="min-w-0">
             <img
               src="/brand/liron-logo.png"
@@ -63,6 +92,8 @@ export default function Navbar() {
           </button>
         </div>
       </div>
+
+      <LironRunnerGame open={showRunner} onClose={() => setShowRunner(false)} />
     </header>
   );
 }

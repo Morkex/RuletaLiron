@@ -6,15 +6,7 @@ import {
   seatsForTable,
   uid,
 } from "../lib/roomLayout";
-
-function shortName(name) {
-  const n = String(name).trim();
-  if (n.length <= 16) return n;
-  const parts = n.split(/\s+/);
-  if (parts.length === 1) return `${n.slice(0, 15)}…`;
-  const compact = `${parts[0]} ${parts[parts.length - 1].charAt(0)}.`;
-  return compact.length <= 16 ? compact : `${parts[0].slice(0, 14)}…`;
-}
+import { shortPlayerName } from "../lib/shortName";
 
 function ChairIcon({ className = "h-3.5 w-3.5" }) {
   return (
@@ -36,6 +28,7 @@ export default function RoomDesigner({
   editable = false,
   seatPlayers = {},
   tableLabels = {},
+  presentation = false,
 }) {
   const canvasRef = useRef(null);
   const [tool, setTool] = useState("select"); // select | add-table | add-seat
@@ -48,6 +41,8 @@ export default function RoomDesigner({
     selectedKind === "table"
       ? layout.tables.find((t) => t.id === selectedId)
       : null;
+
+  const peerNames = Object.values(seatPlayers || {}).filter(Boolean);
 
   const clientToPct = useCallback((clientX, clientY) => {
     const el = canvasRef.current;
@@ -332,7 +327,9 @@ export default function RoomDesigner({
         onPointerDown={onPointerDownCanvas}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        className={`relative aspect-[16/10] w-full overflow-hidden rounded-xl border border-mtg-gold/30 ${
+        className={`relative w-full overflow-hidden rounded-xl border border-mtg-gold/30 ${
+          presentation ? "aspect-[16/9] min-h-[70vh]" : "aspect-[16/10]"
+        } ${
           editable && tool === "add-table" ? "cursor-crosshair" : "cursor-default"
         }`}
         style={{
@@ -356,9 +353,11 @@ export default function RoomDesigner({
           boxShadow: "inset 0 0 40px rgba(0,0,0,0.35)",
         }}
       >
-        <p className="pointer-events-none absolute left-3 top-2 font-display text-[10px] uppercase tracking-[0.2em] text-mtg-gold/35">
-          Plano de sala
-        </p>
+        {!presentation && (
+          <p className="pointer-events-none absolute left-3 top-2 font-display text-[10px] uppercase tracking-[0.2em] text-mtg-gold/35">
+            Plano de sala
+          </p>
+        )}
 
         {layout.tables.map((table) => {
           const selected =
@@ -425,17 +424,34 @@ export default function RoomDesigner({
               style={{ left: `${seat.x}%`, top: `${seat.y}%` }}
             >
               <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full border-2 shadow-lg md:h-9 md:w-9 ${
+                className={`flex items-center justify-center rounded-full border-2 shadow-lg ${
+                  presentation
+                    ? "h-11 w-11 md:h-14 md:w-14"
+                    : "h-8 w-8 md:h-9 md:w-9"
+                } ${
                   player
                     ? "border-mtg-gold bg-mtg-brand text-mtg-gold-bright"
                     : "border-rose-400/80 bg-mtg-frost text-mtg-ink"
                 } ${selected ? "ring-2 ring-mtg-gold-bright" : ""}`}
               >
-                <ChairIcon className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                <ChairIcon
+                  className={
+                    presentation
+                      ? "h-5 w-5 md:h-6 md:w-6"
+                      : "h-3.5 w-3.5 md:h-4 md:w-4"
+                  }
+                />
               </div>
               {player && (
-                <span className="mt-0.5 max-w-[110px] truncate rounded-md border border-mtg-gold/35 bg-mtg-ink/95 px-2 py-0.5 text-center text-xs font-bold leading-tight text-mtg-frost shadow-md md:max-w-[140px] md:text-sm">
-                  {shortName(player)}
+                <span
+                  className={`mt-0.5 truncate rounded-md border border-mtg-gold/35 bg-mtg-ink/95 text-center font-bold leading-tight text-mtg-frost shadow-md ${
+                    presentation
+                      ? "max-w-[160px] px-2.5 py-1 text-sm md:max-w-[200px] md:text-base"
+                      : "max-w-[120px] px-2 py-0.5 text-xs md:max-w-[150px] md:text-sm"
+                  }`}
+                  title={player}
+                >
+                  {shortPlayerName(player, peerNames)}
                 </span>
               )}
             </div>
