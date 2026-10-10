@@ -13,7 +13,7 @@ import { fairSpin } from "../lib/fairRandom";
 import { parseParticipants } from "../lib/parseParticipants";
 
 const AppContext = createContext(null);
-const STORAGE_KEY = "ruletaliron-v1";
+const STORAGE_KEY = "ruletaliron-v2";
 
 function loadStored() {
   try {
