@@ -32,7 +32,7 @@ function uid(prefix) {
 export function AppProvider({ children }) {
   const stored = loadStored();
 
-  const [tab, setTab] = useState("sorteo");
+  const [tab, setTab] = useState("commander");
   const [participants, setParticipants] = useState(stored?.participants ?? []);
   const [eliminated, setEliminated] = useState(stored?.eliminated ?? []);
   const [prizes, setPrizes] = useState(stored?.prizes ?? DEFAULT_PRIZES);

@@ -7,6 +7,7 @@ import Prizes from "./components/Prizes";
 import Config from "./components/Config";
 import FairPlayModal from "./components/FairPlayModal";
 import WinnerModal from "./components/WinnerModal";
+import EmptyParticipantsModal from "./components/EmptyParticipantsModal";
 import RoomDisplayScreen from "./components/RoomDisplayScreen";
 import { isSalaDisplayMode } from "./lib/salaDisplay";
 
@@ -23,6 +24,7 @@ function AppShell() {
         {tab === "premios" && <Prizes />}
         {tab === "config" && <Config />}
       </main>
+      <EmptyParticipantsModal />
       <FairPlayModal />
       <WinnerModal />
       <footer className="border-t border-mtg-gold/15 px-4 py-5 text-center">
