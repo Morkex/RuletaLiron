@@ -8,6 +8,18 @@ import {
   COMMANDER_CONFIG_DEFAULTS,
   normalizeCommanderConfig,
 } from "../lib/commanderTables";
+import {
+  createDefaultRoomLayout,
+  normalizeRoomLayout,
+  mapPodsToRoom,
+  roomCapacity,
+  roomTableSizes,
+  loadRoomTemplatesState,
+  saveRoomTemplatesState,
+  resolveTemplateLayout,
+} from "../lib/roomLayout";
+import RoomDesigner from "./RoomDesigner";
+import RoomTemplatesBar from "./RoomTemplatesBar";
 
 const CMD_STORAGE = "ruletaliron-commander-v2";
 
@@ -176,6 +188,16 @@ export default function CommanderTables() {
   const [cmdConfig, setCmdConfig] = useState(() =>
     normalizeCommanderConfig(stored?.config ?? COMMANDER_CONFIG_DEFAULTS),
   );
+  const [tplState, setTplState] = useState(() => loadRoomTemplatesState());
+  const [roomLayout, setRoomLayout] = useState(() => {
+    if (stored?.roomLayout) return normalizeRoomLayout(stored.roomLayout);
+    const initial = loadRoomTemplatesState();
+    return resolveTemplateLayout(initial.activeId, initial.customSlots);
+  });
+  const [viewMode, setViewMode] = useState("reparto"); // reparto | sala | diseno
+  const [useRoomCapacity, setUseRoomCapacity] = useState(
+    stored?.useRoomCapacity ?? true,
+  );
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -187,12 +209,46 @@ export default function CommanderTables() {
   /** Misma lista activa que los sorteos / ruleta */
   const pool = participants;
 
+  const roomSizes = useMemo(
+    () => roomTableSizes(roomLayout).filter((n) => n > 0),
+    [roomLayout],
+  );
+  const roomSeatTotal = useMemo(() => roomCapacity(roomLayout), [roomLayout]);
+
+  const effectiveConfig = useMemo(() => {
+    if (!useRoomCapacity || !roomSizes.length) return cmdConfig;
+    const sum = roomSizes.reduce((a, b) => a + b, 0);
+    if (sum === pool.length) {
+      return {
+        ...normalizeCommanderConfig({
+          ...cmdConfig,
+          minPerTable: Math.min(...roomSizes),
+          maxPerTable: Math.max(...roomSizes),
+        }),
+        exactSizes: roomSizes,
+      };
+    }
+    return normalizeCommanderConfig({
+      ...cmdConfig,
+      tableCountMode: "fixed",
+      fixedTableCount: roomSizes.length,
+      minPerTable: Math.min(cmdConfig.minPerTable, ...roomSizes),
+      maxPerTable: Math.max(cmdConfig.maxPerTable, ...roomSizes),
+      allowOversizedFallback: true,
+    });
+  }, [useRoomCapacity, roomSizes, cmdConfig, pool.length]);
+
   const previewSizes = useMemo(
     () =>
-      pool.length >= cmdConfig.minPerTable
-        ? computeTableSizes(pool.length, cmdConfig)
+      pool.length >= (effectiveConfig.minPerTable || 1)
+        ? computeTableSizes(pool.length, effectiveConfig)
         : [],
-    [pool.length, cmdConfig],
+    [pool.length, effectiveConfig],
+  );
+
+  const { seatPlayers, tableLabels: roomLabels } = useMemo(
+    () => mapPodsToRoom(tables, roomLayout),
+    [tables, roomLayout],
   );
 
   useEffect(() => {
@@ -204,17 +260,93 @@ export default function CommanderTables() {
           tables,
           meta,
           config: cmdConfig,
+          roomLayout,
+          useRoomCapacity,
         }),
       );
     } catch {
       /* ignore */
     }
-  }, [previousTables, tables, meta, cmdConfig]);
+  }, [previousTables, tables, meta, cmdConfig, roomLayout, useRoomCapacity]);
+
+  useEffect(() => {
+    saveRoomTemplatesState(tplState);
+  }, [tplState]);
+
+  const applyRoomTemplate = (templateId) => {
+    const layout = resolveTemplateLayout(templateId, tplState.customSlots);
+    setRoomLayout(layout);
+    setTplState((s) => ({ ...s, activeId: templateId }));
+    const label =
+      tplState.customSlots.find((c) => c.id === templateId)?.name ||
+      (templateId === "builtin-4"
+        ? "4 mesas marrones"
+        : templateId === "builtin-5"
+          ? "Grande + 4 marrones"
+          : "Plantilla");
+    setToast(`Plantilla cargada: ${label}`);
+    setTimeout(() => setToast(""), 2500);
+  };
+
+  const saveLayoutToSlot = (slotId, name, layout) => {
+    setTplState((s) => ({
+      ...s,
+      activeId: slotId,
+      customSlots: s.customSlots.map((slot) =>
+        slot.id === slotId
+          ? {
+              ...slot,
+              name: String(name || `Personalizada ${slot.slot}`).slice(0, 40),
+              layout: normalizeRoomLayout(layout),
+              updatedAt: Date.now(),
+            }
+          : slot,
+      ),
+    }));
+    setToast(`Guardado en ${name}`);
+    setTimeout(() => setToast(""), 2500);
+  };
+
+  const clearTemplateSlot = (slotId) => {
+    setTplState((s) => ({
+      ...s,
+      activeId:
+        s.activeId === slotId ? "builtin-5" : s.activeId,
+      customSlots: s.customSlots.map((slot) =>
+        slot.id === slotId
+          ? { ...slot, name: "", layout: null, updatedAt: null }
+          : slot,
+      ),
+    }));
+    setToast("Slot vaciado");
+    setTimeout(() => setToast(""), 2000);
+  };
+
+  const renameTemplateSlot = (slotId, name) => {
+    setTplState((s) => ({
+      ...s,
+      customSlots: s.customSlots.map((slot) =>
+        slot.id === slotId
+          ? { ...slot, name: String(name).slice(0, 40) }
+          : slot,
+      ),
+    }));
+  };
 
   const handleGenerate = () => {
     setError("");
     try {
-      const result = assignCommanderTables(pool, previousTables, cmdConfig);
+      if (useRoomCapacity && roomSeatTotal > 0 && pool.length > roomSeatTotal) {
+        throw new Error(
+          `Hay ${pool.length} jugadores y solo ${roomSeatTotal} sillas en la sala. Añade sillas o reduce la lista.`,
+        );
+      }
+
+      const result = assignCommanderTables(
+        pool,
+        previousTables,
+        effectiveConfig,
+      );
       setTables(result.tables);
       setMeta({
         attempts: result.attempts,
@@ -224,6 +356,7 @@ export default function CommanderTables() {
         playerCount: result.playerCount,
         at: Date.now(),
       });
+      setViewMode("sala");
       if (result.relaxed) {
         setToast(
           "No se encontró reparto perfecto anti-repetición a tiempo; se usó el mejor random posible.",
@@ -274,21 +407,117 @@ export default function CommanderTables() {
               Mesas Commander
             </h2>
             <p className="mt-2 max-w-3xl text-sm text-mtg-frost/75 md:text-base">
-              Usa la misma lista de participantes que los sorteos. Configura
-              mínimos, máximos, número de mesas y la regla anti-repetición.
+              Misma lista que los sorteos. Diseña el plano de la sala, genera el
+              reparto y verás a cada jugador en su silla.
             </p>
           </div>
-          <button
-            type="button"
-            className="btn-ghost rounded-lg px-3 py-2 text-sm"
-            onClick={() => setShowSettings((v) => !v)}
-          >
-            {showSettings ? "Ocultar opciones" : "Opciones de mesas"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: "reparto", label: "Reparto" },
+              { id: "sala", label: "Vista sala" },
+              { id: "diseno", label: "Diseñar sala" },
+            ].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className={`rounded-lg px-3 py-2 text-sm ${
+                  viewMode === m.id ? "btn-primary" : "btn-ghost"
+                }`}
+                onClick={() => setViewMode(m.id)}
+              >
+                {m.label}
+              </button>
+            ))}
+            {viewMode === "reparto" && (
+              <button
+                type="button"
+                className="btn-ghost rounded-lg px-3 py-2 text-sm"
+                onClick={() => setShowSettings((v) => !v)}
+              >
+                {showSettings ? "Ocultar opciones" : "Opciones"}
+              </button>
+            )}
+          </div>
         </div>
 
+        {(viewMode === "sala" || viewMode === "diseno") && (
+          <div className="mt-5 space-y-3">
+            {viewMode === "diseno" && (
+              <RoomTemplatesBar
+                activeId={tplState.activeId}
+                customSlots={tplState.customSlots}
+                currentLayout={roomLayout}
+                onApply={applyRoomTemplate}
+                onSaveToSlot={saveLayoutToSlot}
+                onClearSlot={clearTemplateSlot}
+                onRenameSlot={renameTemplateSlot}
+              />
+            )}
+            {viewMode === "sala" && (
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs text-mtg-frost/50">Plantilla:</label>
+                <select
+                  value={tplState.activeId}
+                  onChange={(e) => applyRoomTemplate(e.target.value)}
+                  className="rounded-lg border border-mtg-gold/25 bg-mtg-ink/80 px-2 py-1.5 text-sm outline-none focus:border-mtg-gold/60"
+                >
+                  <option value="builtin-5">Grande + 4 marrones</option>
+                  <option value="builtin-4">4 mesas marrones</option>
+                  {tplState.customSlots
+                    .filter((s) => s.layout)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name || `Slot ${s.slot}`}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn-ghost rounded-md px-2 py-1 text-xs"
+                  onClick={() => setViewMode("diseno")}
+                >
+                  Editar / guardar plantillas
+                </button>
+              </div>
+            )}
+            <RoomDesigner
+              layout={roomLayout}
+              onChange={setRoomLayout}
+              editable={viewMode === "diseno"}
+              seatPlayers={viewMode === "sala" ? seatPlayers : {}}
+              tableLabels={viewMode === "sala" ? roomLabels : {}}
+            />
+            <AnimatePresence>
+              {toast && viewMode !== "reparto" && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="text-sm text-mtg-mana-g"
+                >
+                  {toast}
+                </motion.p>
+              )}
+            </AnimatePresence>
+            {viewMode === "sala" && tables.length === 0 && (
+              <p className="mt-3 text-center text-sm text-mtg-frost/50">
+                Genera el reparto para ver los nombres en las sillas. Puedes
+                editar el plano en{" "}
+                <button
+                  type="button"
+                  className="underline text-mtg-gold"
+                  onClick={() => setViewMode("diseno")}
+                >
+                  Diseñar sala
+                </button>
+                .
+              </p>
+            )}
+          </div>
+        )}
+
         <AnimatePresence initial={false}>
-          {showSettings && (
+          {viewMode === "reparto" && showSettings && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -302,7 +531,7 @@ export default function CommanderTables() {
                   min={2}
                   max={6}
                   onChange={(v) => updateCmd({ minPerTable: v })}
-                  hint="David: normalmente 3"
+                  hint="Normalmente 3"
                 />
                 <NumberField
                   label="Máximo por mesa"
@@ -408,6 +637,17 @@ export default function CommanderTables() {
                   />
                 </label>
 
+                <Toggle
+                  label="Usar plano de sala"
+                  description={
+                    roomSeatTotal
+                      ? `Capacidad: ${roomSeatTotal} sillas en ${roomSizes.length} mesas (${roomSizes.join("+")})`
+                      : "Diseña la sala primero para fijar mesas y sillas"
+                  }
+                  checked={useRoomCapacity}
+                  onChange={setUseRoomCapacity}
+                />
+
                 <div className="md:col-span-2">
                   <button
                     type="button"
@@ -422,6 +662,7 @@ export default function CommanderTables() {
           )}
         </AnimatePresence>
 
+        {viewMode === "reparto" && (
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           <div className="space-y-3">
             <div className="rounded-lg border border-mtg-gold/20 bg-mtg-void/50 px-3 py-3 text-sm">
@@ -539,13 +780,32 @@ export default function CommanderTables() {
               )}
             </div>
 
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-mtg-frost/80">
+              <input
+                type="checkbox"
+                checked={useRoomCapacity}
+                onChange={(e) => setUseRoomCapacity(e.target.checked)}
+                className="accent-mtg-gold"
+              />
+              Usar plano de sala
+              {roomSeatTotal > 0 && (
+                <span className="text-xs text-mtg-frost/45">
+                  ({roomSeatTotal} sillas)
+                </span>
+              )}
+            </label>
+
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 className="btn-primary rounded-xl px-6 py-3 text-base"
                 onClick={handleGenerate}
                 disabled={
-                  pool.length < cmdConfig.minPerTable || !previewSizes.length
+                  pool.length < effectiveConfig.minPerTable ||
+                  !previewSizes.length ||
+                  (useRoomCapacity &&
+                    roomSeatTotal > 0 &&
+                    pool.length > roomSeatTotal)
                 }
               >
                 ¡Generar mesas!
@@ -593,11 +853,32 @@ export default function CommanderTables() {
                 </div>
               </dl>
             )}
+
+            {useRoomCapacity && roomSeatTotal > 0 && (
+              <p className="text-xs text-mtg-frost/50">
+                Plano: {roomSizes.length} mesas · {roomSeatTotal} sillas
+                {pool.length === roomSeatTotal
+                  ? " · coinciden con la lista"
+                  : pool.length > roomSeatTotal
+                    ? " · faltan sillas"
+                    : " · hay sillas libres"}
+                . Tras generar se abre la{" "}
+                <button
+                  type="button"
+                  className="underline text-mtg-gold"
+                  onClick={() => setViewMode("sala")}
+                >
+                  vista sala
+                </button>
+                .
+              </p>
+            )}
           </div>
         </div>
+        )}
       </section>
 
-      {tables.length > 0 && (
+      {viewMode === "reparto" && tables.length > 0 && (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {tables.map((table, i) => (
             <TableCard key={table.id} table={table} index={i} />
@@ -605,7 +886,7 @@ export default function CommanderTables() {
         </section>
       )}
 
-      {tables.length === 0 && !error && (
+      {viewMode === "reparto" && tables.length === 0 && !error && (
         <p className="text-center text-sm text-mtg-frost/45">
           Ajusta las opciones si hace falta y pulsa &quot;Generar mesas&quot;.
         </p>

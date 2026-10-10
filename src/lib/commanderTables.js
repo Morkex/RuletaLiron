@@ -74,6 +74,14 @@ export function computeTableSizes(n, configInput = {}) {
 
   if (n < min) return [];
 
+  /** Tamaños forzados (p. ej. sillas por mesa del plano de sala). */
+  if (Array.isArray(cfg.exactSizes) && cfg.exactSizes.length) {
+    const sizes = cfg.exactSizes.map((s) => Number(s)).filter((s) => s > 0);
+    const sum = sizes.reduce((a, b) => a + b, 0);
+    if (sum === n) return sizes;
+    return [];
+  }
+
   if (cfg.tableCountMode === "fixed") {
     const sizes = sizesFromTableCount(n, cfg.fixedTableCount, min, max);
     if (sizes.length) return sizes;
