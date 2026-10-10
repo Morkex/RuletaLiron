@@ -115,6 +115,7 @@ export function randomWheelColors(count) {
 }
 
 export const TABS = [
+  { id: "commander", label: "Mesas Commander" },
   { id: "sorteo", label: "Sorteo / Ruleta" },
   { id: "participantes", label: "Lista de Participantes" },
   { id: "premios", label: "Premios" },

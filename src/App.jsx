@@ -1,6 +1,7 @@
 import { AppProvider, useApp } from "./context/AppContext";
 import Navbar from "./components/Navbar";
 import SorteoScreen from "./components/SorteoScreen";
+import CommanderTables from "./components/CommanderTables";
 import Participants from "./components/Participants";
 import Prizes from "./components/Prizes";
 import Config from "./components/Config";
@@ -15,6 +16,7 @@ function AppShell() {
       <Navbar />
       <main className="px-4 py-6 md:px-6 md:py-8">
         {tab === "sorteo" && <SorteoScreen />}
+        {tab === "commander" && <CommanderTables />}
         {tab === "participantes" && <Participants />}
         {tab === "premios" && <Prizes />}
         {tab === "config" && <Config />}
@@ -29,7 +31,7 @@ function AppShell() {
             className="h-7 w-auto opacity-90"
           />
           <p className="text-xs text-mtg-frost/45">
-            Juegos, Café y Libros · Ruleta de sorteos MTG
+            Juegos, Café y Libros · Sorteos y mesas Commander
           </p>
         </div>
       </footer>
