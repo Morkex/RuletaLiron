@@ -3,15 +3,21 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useApp } from "../context/AppContext";
 import { parseParticipants } from "../lib/parseParticipants";
 
-const SAMPLE = `Pablo Ruiz Jurado
-Pilar Gómez-Caminero Téllez
-Kbzas
-Diego
-Carnero
-Perrotruko!
-Rosa
-Almudena
-Jiaxian`;
+const SAMPLE = `Jace Beleren
+Chandra Nalaar
+Liliana Vess
+Nicol Bolas
+Urza
+Yawgmoth
+Karn
+Teferi
+Elesh Norn
+Garruk Wildspeaker
+Gideon Jura
+Ajani Goldmane
+Ugin
+Elspeth Tirel
+Squee`;
 
 export default function Participants() {
   const {
