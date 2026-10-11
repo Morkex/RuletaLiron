@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import RoomDesigner from "./RoomDesigner";
 import {
   loadSalaDisplay,
+  publishSalaRoundStart,
   SALA_DISPLAY_CHANNEL,
   SALA_DISPLAY_STORAGE,
   formatRoundTimer,
@@ -11,11 +12,15 @@ import { normalizeRoomLayout } from "../lib/roomLayout";
 /**
  * Vista limpia para el segundo monitor (participantes).
  * Se abre con ?display=sala
+ * El cronómetro de ronda arranca al entrar en pantalla completa.
  */
 export default function RoomDisplayScreen() {
   const [snap, setSnap] = useState(() => loadSalaDisplay());
   const [fsError, setFsError] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => Boolean(document.fullscreenElement),
+  );
 
   useEffect(() => {
     document.title = "Sala Commander · El Lirón";
@@ -34,7 +39,7 @@ export default function RoomDisplayScreen() {
     try {
       bc = new BroadcastChannel(SALA_DISPLAY_CHANNEL);
       bc.onmessage = (ev) => {
-        if (ev.data) setSnap(ev.data);
+        if (ev.data && !ev.data.type) setSnap(ev.data);
       };
     } catch {
       /* ignore */
@@ -49,8 +54,16 @@ export default function RoomDisplayScreen() {
 
     const tick = setInterval(() => setNow(Date.now()), 250);
 
+    const onFs = () => {
+      const fs = Boolean(document.fullscreenElement);
+      setIsFullscreen(fs);
+      if (fs) publishSalaRoundStart();
+    };
+    document.addEventListener("fullscreenchange", onFs);
+
     return () => {
       window.removeEventListener("storage", onStorage);
+      document.removeEventListener("fullscreenchange", onFs);
       clearInterval(poll);
       clearInterval(tick);
       bc?.close?.();
@@ -58,20 +71,29 @@ export default function RoomDisplayScreen() {
   }, []);
 
   useEffect(() => {
-    if (snap?.roundLabel) {
+    if (snap?.roundLabel && snap?.showSalaRoundLabel !== false) {
       document.title = `${snap.roundLabel} · Sala Commander · El Lirón`;
+    } else {
+      document.title = "Sala Commander · El Lirón";
     }
-  }, [snap?.roundLabel]);
+  }, [snap?.roundLabel, snap?.showSalaRoundLabel]);
 
-  const goFullscreen = useCallback(async () => {
+  const toggleFullscreen = useCallback(async () => {
     setFsError("");
     try {
-      const el = document.documentElement;
-      if (!document.fullscreenElement) {
-        await el.requestFullscreen?.();
+      if (document.fullscreenElement) {
+        await document.exitFullscreen?.();
+        return;
       }
+      await document.documentElement.requestFullscreen?.();
+      // Por si fullscreenchange no llega (algunos navegadores), armar igual
+      publishSalaRoundStart();
     } catch {
-      setFsError("Usa F11 si el navegador bloquea la pantalla completa.");
+      setFsError(
+        document.fullscreenElement
+          ? "No se pudo salir de pantalla completa."
+          : "Usa F11 si el navegador bloquea la pantalla completa.",
+      );
     }
   }, []);
 
@@ -82,14 +104,22 @@ export default function RoomDisplayScreen() {
   const tableLabels = snap?.tableLabels ?? {};
   const hasPlayers = Object.keys(seatPlayers).length > 0;
 
+  const showLabel = snap?.showSalaRoundLabel !== false;
+  const showTimer = snap?.showSalaRoundTimer !== false;
+  const showHud = showLabel || showTimer;
+
   const pausedMs = snap?.roundPausedElapsedMs;
   const startedAt = Number(snap?.roundStartedAt) || now;
-  const elapsedMs =
-    pausedMs != null && !Number.isNaN(pausedMs)
+  const timerStarted = Boolean(snap?.roundTimerStarted);
+  const elapsedMs = !timerStarted
+    ? 0
+    : pausedMs != null && !Number.isNaN(pausedMs)
       ? pausedMs
       : Math.max(0, now - startedAt);
   const roundLabel = snap?.roundLabel || "Ronda 1";
-  const timerPaused = pausedMs != null && !Number.isNaN(pausedMs);
+  const timerPaused =
+    timerStarted && pausedMs != null && !Number.isNaN(pausedMs);
+  const awaitingStart = showTimer && !timerStarted;
 
   return (
     <div className="flex min-h-screen flex-col bg-mtg-void text-mtg-frost">
@@ -112,23 +142,42 @@ export default function RoomDisplayScreen() {
           </div>
         </div>
 
-        <div className="flex flex-col items-center text-center">
-          <p className="font-display text-2xl text-mtg-gold-bright md:text-4xl">
-            {roundLabel}
-          </p>
-          <p
-            className={`mt-1 font-mono text-3xl tracking-wider md:text-5xl ${
-              timerPaused ? "text-mtg-ember" : "text-mtg-frost"
-            }`}
-          >
-            {formatRoundTimer(elapsedMs)}
-          </p>
-          {timerPaused && (
-            <p className="mt-0.5 text-[11px] uppercase tracking-widest text-mtg-ember/80">
-              Pausado
-            </p>
-          )}
-        </div>
+        {showHud ? (
+          <div className="flex flex-col items-center text-center">
+            {showLabel && (
+              <p className="font-display text-2xl text-mtg-gold-bright md:text-4xl">
+                {roundLabel}
+              </p>
+            )}
+            {showTimer && (
+              <>
+                <p
+                  className={`mt-1 font-mono text-3xl tracking-wider md:text-5xl ${
+                    timerPaused || awaitingStart
+                      ? "text-mtg-ember"
+                      : "text-mtg-frost"
+                  }`}
+                >
+                  {formatRoundTimer(elapsedMs)}
+                </p>
+                {awaitingStart && (
+                  <p className="mt-0.5 text-[11px] uppercase tracking-widest text-mtg-ember/80">
+                    {isFullscreen
+                      ? "Iniciando…"
+                      : "Pulsa pantalla completa para empezar"}
+                  </p>
+                )}
+                {timerPaused && (
+                  <p className="mt-0.5 text-[11px] uppercase tracking-widest text-mtg-ember/80">
+                    Pausado
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <div />
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           {fsError && (
@@ -136,10 +185,14 @@ export default function RoomDisplayScreen() {
           )}
           <button
             type="button"
-            className="btn-primary rounded-lg px-4 py-2 text-sm"
-            onClick={goFullscreen}
+            className={
+              isFullscreen
+                ? "btn-ghost rounded-lg px-4 py-2 text-sm ring-1 ring-mtg-gold/40"
+                : "btn-primary rounded-lg px-4 py-2 text-sm"
+            }
+            onClick={toggleFullscreen}
           >
-            Pantalla completa
+            {isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
           </button>
         </div>
       </header>

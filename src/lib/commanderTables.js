@@ -21,6 +21,10 @@ export const COMMANDER_CONFIG_DEFAULTS = {
   tableLabelPrefix: "Mesa",
   /** Tope de mesas en modo auto (p. ej. mesas físicas del plano). 0 = sin tope */
   maxTableCount: 0,
+  /** Mostrar título de ronda en vista sala / pantalla completa */
+  showSalaRoundLabel: true,
+  /** Mostrar cronómetro (arranca al poner pantalla completa) */
+  showSalaRoundTimer: true,
 };
 
 export function normalizeCommanderConfig(partial = {}) {
@@ -44,6 +48,8 @@ export function normalizeCommanderConfig(partial = {}) {
     allowOversizedFallback: Boolean(c.allowOversizedFallback),
     avoidRepeatEnabled: Boolean(c.avoidRepeatEnabled),
     tableCountMode: c.tableCountMode === "fixed" ? "fixed" : "auto",
+    showSalaRoundLabel: c.showSalaRoundLabel !== false,
+    showSalaRoundTimer: c.showSalaRoundTimer !== false,
   };
 }
 

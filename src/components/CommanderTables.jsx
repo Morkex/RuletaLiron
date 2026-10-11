@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApp } from "../context/AppContext";
 import {
@@ -27,6 +27,9 @@ import {
   salaDisplayUrl,
   resolveRoundLabel,
   formatRoundTimer,
+  SALA_DISPLAY_CHANNEL,
+  SALA_DISPLAY_STORAGE,
+  SALA_ROUND_START_MSG,
 } from "../lib/salaDisplay";
 
 const CMD_STORAGE = "ruletaliron-commander-v2";
@@ -214,25 +217,38 @@ export default function CommanderTables() {
   const [roundTitle, setRoundTitle] = useState(
     () => String(stored?.roundTitle ?? ""),
   );
+  /** false hasta que la pantalla de sala entre en fullscreen */
+  const [roundTimerStarted, setRoundTimerStarted] = useState(() =>
+    Boolean(stored?.roundTimerStarted),
+  );
   const [roundStartedAt, setRoundStartedAt] = useState(
     () => Number(stored?.roundStartedAt) || Date.now(),
   );
-  /** null = en marcha; número = ms congelados al pausar */
-  const [roundPausedElapsedMs, setRoundPausedElapsedMs] = useState(() =>
-    stored?.roundPausedElapsedMs == null
-      ? null
-      : Number(stored.roundPausedElapsedMs),
-  );
+  /** null = en marcha; número = ms congelados (0 = esperando pantalla completa) */
+  const [roundPausedElapsedMs, setRoundPausedElapsedMs] = useState(() => {
+    if (stored?.roundPausedElapsedMs != null) {
+      return Number(stored.roundPausedElapsedMs);
+    }
+    // Por defecto: pausado en 0 hasta pantalla completa
+    return stored?.roundTimerStarted ? null : 0;
+  });
   const [timerNow, setTimerNow] = useState(() => Date.now());
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const roundTimerStartedRef = useRef(roundTimerStarted);
+  roundTimerStartedRef.current = roundTimerStarted;
+
+  const showSalaRoundLabel = cmdConfig.showSalaRoundLabel !== false;
+  const showSalaRoundTimer = cmdConfig.showSalaRoundTimer !== false;
 
   const roundLabel = resolveRoundLabel(roundTitle, roundNumber);
-  const timerElapsedMs =
-    roundPausedElapsedMs != null
+  const timerElapsedMs = !roundTimerStarted
+    ? 0
+    : roundPausedElapsedMs != null
       ? roundPausedElapsedMs
       : Math.max(0, timerNow - roundStartedAt);
-  const timerRunning = roundPausedElapsedMs == null;
+  const timerRunning =
+    roundTimerStarted && roundPausedElapsedMs == null;
 
   const updateCmd = (patch) => {
     setCmdConfig((prev) => normalizeCommanderConfig({ ...prev, ...patch }));
@@ -311,6 +327,7 @@ export default function CommanderTables() {
           roundTitle,
           roundStartedAt,
           roundPausedElapsedMs,
+          roundTimerStarted,
         }),
       );
     } catch {
@@ -328,6 +345,7 @@ export default function CommanderTables() {
     roundTitle,
     roundStartedAt,
     roundPausedElapsedMs,
+    roundTimerStarted,
   ]);
 
   useEffect(() => {
@@ -340,6 +358,41 @@ export default function CommanderTables() {
     return () => clearInterval(id);
   }, [timerRunning]);
 
+  const armRoundTimerFromDisplay = useCallback(() => {
+    if (roundTimerStartedRef.current) return;
+    roundTimerStartedRef.current = true;
+    setRoundTimerStarted(true);
+    setRoundStartedAt(Date.now());
+    setRoundPausedElapsedMs(null);
+    setTimerNow(Date.now());
+  }, []);
+
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === `${SALA_DISPLAY_STORAGE}:round-start` && e.newValue) {
+        armRoundTimerFromDisplay();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    let bc;
+    try {
+      bc = new BroadcastChannel(SALA_DISPLAY_CHANNEL);
+      bc.onmessage = (ev) => {
+        if (ev.data?.type === SALA_ROUND_START_MSG) {
+          armRoundTimerFromDisplay();
+        }
+      };
+    } catch {
+      /* ignore */
+    }
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      bc?.close?.();
+    };
+  }, [armRoundTimerFromDisplay]);
+
   const publishDisplay = useCallback(() => {
     publishSalaDisplay({
       layout: roomLayout,
@@ -350,6 +403,9 @@ export default function CommanderTables() {
       roundNumber,
       roundStartedAt,
       roundPausedElapsedMs,
+      roundTimerStarted,
+      showSalaRoundLabel,
+      showSalaRoundTimer,
     });
   }, [
     roomLayout,
@@ -359,19 +415,30 @@ export default function CommanderTables() {
     roundNumber,
     roundStartedAt,
     roundPausedElapsedMs,
+    roundTimerStarted,
+    showSalaRoundLabel,
+    showSalaRoundTimer,
   ]);
 
   useEffect(() => {
     publishDisplay();
   }, [publishDisplay]);
 
+  /** Reinicia y deja el crono a 0 esperando pantalla completa */
   const resetRoundTimer = () => {
+    roundTimerStartedRef.current = false;
+    setRoundTimerStarted(false);
     setRoundStartedAt(Date.now());
-    setRoundPausedElapsedMs(null);
+    setRoundPausedElapsedMs(0);
     setTimerNow(Date.now());
   };
 
   const toggleRoundTimer = () => {
+    if (!roundTimerStarted) {
+      // Arranque manual desde mesa de control (sin esperar fullscreen)
+      armRoundTimerFromDisplay();
+      return;
+    }
     if (timerRunning) {
       setRoundPausedElapsedMs(Math.max(0, Date.now() - roundStartedAt));
     } else {
@@ -386,7 +453,7 @@ export default function CommanderTables() {
     setRoundNumber((n) => n + 1);
     setRoundTitle("");
     resetRoundTimer();
-    setToast(`Pasando a Ronda ${roundNumber + 1}`);
+    setToast(`Pasando a Ronda ${roundNumber + 1} — crono al poner pantalla completa`);
     setTimeout(() => setToast(""), 2500);
   };
 
@@ -631,56 +698,79 @@ export default function CommanderTables() {
             )}
             {viewMode === "sala" && (
               <div className="space-y-3">
+                {(showSalaRoundLabel || showSalaRoundTimer) && (
                 <div className="rounded-xl border border-mtg-gold/25 bg-mtg-void/50 p-3 md:p-4">
                   <div className="flex flex-wrap items-end justify-between gap-3">
-                    <div className="min-w-[200px] flex-1">
-                      <label className="mb-1 block font-display text-xs text-mtg-gold">
-                        Título de la ronda
-                      </label>
-                      <input
-                        type="text"
-                        value={roundTitle}
-                        onChange={(e) => setRoundTitle(e.target.value)}
-                        placeholder={`Ronda ${roundNumber} (auto)`}
-                        className="w-full rounded-lg border border-mtg-gold/25 bg-mtg-ink/80 px-3 py-2 text-sm outline-none focus:border-mtg-gold/60"
-                      />
-                      <p className="mt-1 text-[11px] text-mtg-frost/45">
-                        Vacío = automático. Ej: Semifinales, Final…
-                      </p>
-                    </div>
+                    {showSalaRoundLabel && (
+                      <div className="min-w-[200px] flex-1">
+                        <label className="mb-1 block font-display text-xs text-mtg-gold">
+                          Título de la ronda
+                        </label>
+                        <input
+                          type="text"
+                          value={roundTitle}
+                          onChange={(e) => setRoundTitle(e.target.value)}
+                          placeholder={`Ronda ${roundNumber} (auto)`}
+                          className="w-full rounded-lg border border-mtg-gold/25 bg-mtg-ink/80 px-3 py-2 text-sm outline-none focus:border-mtg-gold/60"
+                        />
+                        <p className="mt-1 text-[11px] text-mtg-frost/45">
+                          Vacío = automático. Ej: Semifinales, Final…
+                        </p>
+                      </div>
+                    )}
                     <div className="text-center">
-                      <p className="font-display text-lg text-mtg-gold-bright">
-                        {roundLabel}
-                      </p>
-                      <p
-                        className={`font-mono text-2xl tracking-wider ${
-                          timerRunning ? "text-mtg-frost" : "text-mtg-ember"
-                        }`}
-                      >
-                        {formatRoundTimer(timerElapsedMs)}
-                      </p>
+                      {showSalaRoundLabel && (
+                        <p className="font-display text-lg text-mtg-gold-bright">
+                          {roundLabel}
+                        </p>
+                      )}
+                      {showSalaRoundTimer && (
+                        <>
+                          <p
+                            className={`font-mono text-2xl tracking-wider ${
+                              timerRunning ? "text-mtg-frost" : "text-mtg-ember"
+                            }`}
+                          >
+                            {formatRoundTimer(timerElapsedMs)}
+                          </p>
+                          {!roundTimerStarted && (
+                            <p className="mt-0.5 text-[10px] uppercase tracking-wide text-mtg-frost/45">
+                              Arranca al poner pantalla completa
+                            </p>
+                          )}
+                        </>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="btn-ghost rounded-md px-3 py-1.5 text-xs"
-                        onClick={toggleRoundTimer}
-                      >
-                        {timerRunning ? "Pausar" : "Reanudar"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-ghost rounded-md px-3 py-1.5 text-xs"
-                        onClick={resetRoundTimer}
-                      >
-                        Reiniciar cronómetro
-                      </button>
+                      {showSalaRoundTimer && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-ghost rounded-md px-3 py-1.5 text-xs"
+                            onClick={toggleRoundTimer}
+                          >
+                            {!roundTimerStarted
+                              ? "Iniciar ahora"
+                              : timerRunning
+                                ? "Pausar"
+                                : "Reanudar"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost rounded-md px-3 py-1.5 text-xs"
+                            onClick={resetRoundTimer}
+                          >
+                            Reiniciar cronómetro
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
                         className="btn-ghost rounded-md px-3 py-1.5 text-xs"
                         onClick={() => {
                           setRoundNumber((n) => Math.max(1, n - 1));
                           setRoundTitle("");
+                          if (showSalaRoundTimer) resetRoundTimer();
                         }}
                         disabled={roundNumber <= 1}
                       >
@@ -696,6 +786,7 @@ export default function CommanderTables() {
                     </div>
                   </div>
                 </div>
+                )}
 
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="text-xs text-mtg-frost/50">Plantilla:</label>
@@ -911,6 +1002,19 @@ export default function CommanderTables() {
                   }
                   checked={useRoomCapacity}
                   onChange={setUseRoomCapacity}
+                />
+
+                <Toggle
+                  label="Mostrar nombre de ronda"
+                  description="Título «Ronda N» o personalizado en vista sala y pantalla completa"
+                  checked={cmdConfig.showSalaRoundLabel}
+                  onChange={(v) => updateCmd({ showSalaRoundLabel: v })}
+                />
+                <Toggle
+                  label="Mostrar cronómetro de ronda"
+                  description="El tiempo solo arranca al abrir pantalla completa en la vista de sala"
+                  checked={cmdConfig.showSalaRoundTimer}
+                  onChange={(v) => updateCmd({ showSalaRoundTimer: v })}
                 />
 
                 <div className="md:col-span-2 flex flex-wrap items-center gap-3">

@@ -3,6 +3,29 @@
 export const SALA_DISPLAY_STORAGE = "ruletaliron-sala-display-v1";
 export const SALA_DISPLAY_CHANNEL = "ruletaliron-sala-display";
 
+/** Mensaje de control: la pantalla de sala pide arrancar la ronda/cronómetro */
+export const SALA_ROUND_START_MSG = "sala-round-start";
+
+export function publishSalaRoundStart() {
+  const msg = { type: SALA_ROUND_START_MSG, at: Date.now() };
+  try {
+    const bc = new BroadcastChannel(SALA_DISPLAY_CHANNEL);
+    bc.postMessage(msg);
+    bc.close();
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.setItem(
+      `${SALA_DISPLAY_STORAGE}:round-start`,
+      String(msg.at),
+    );
+  } catch {
+    /* ignore */
+  }
+  return msg;
+}
+
 export function publishSalaDisplay(payload) {
   const data = {
     layout: payload.layout ?? { tables: [], seats: [] },
@@ -12,11 +35,14 @@ export function publishSalaDisplay(payload) {
     roundLabel: payload.roundLabel || "Ronda 1",
     roundNumber: Number(payload.roundNumber) || 1,
     roundStartedAt: Number(payload.roundStartedAt) || Date.now(),
-    /** Si > 0, el cronómetro está pausado y muestra este valor fijo (ms) */
+    /** Si != null, el cronómetro está pausado y muestra este valor fijo (ms) */
     roundPausedElapsedMs:
       payload.roundPausedElapsedMs == null
         ? null
         : Number(payload.roundPausedElapsedMs),
+    roundTimerStarted: Boolean(payload.roundTimerStarted),
+    showSalaRoundLabel: payload.showSalaRoundLabel !== false,
+    showSalaRoundTimer: payload.showSalaRoundTimer !== false,
     at: Date.now(),
   };
   try {
