@@ -58,7 +58,6 @@ export const CONFIG_DEFAULTS = {
   customMusicUrl1: "",
   customMusicUrl2: "",
   confettiEnabled: true,
-  autoRemoveWinner: false,
   musicEnabled: false,
 };
 

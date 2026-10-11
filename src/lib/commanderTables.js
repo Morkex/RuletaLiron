@@ -69,13 +69,95 @@ function sizesFromTableCount(n, tableCount, min, max) {
 }
 
 /**
+ * Reparte n jugadores en mesas con capacidades distintas (sillas del plano).
+ * Si cabe en un “máximo cómodo” (p. ej. 4), lo usa; si no, aprovecha sillas extra.
+ * @returns {number[]} tamaños de pods (solo mesas usadas), mayor→menor
+ */
+export function computeSizesForRoomCapacities(
+  n,
+  capacities,
+  { minPerTable = 3, softMax = 4 } = {},
+) {
+  const caps = (capacities || []).map(Number).filter((c) => c > 0);
+  if (!caps.length || n < 1) return [];
+  const total = caps.reduce((a, b) => a + b, 0);
+  if (n > total) return [];
+
+  const pack = (limitCaps, minPer) => {
+    const indexed = limitCaps
+      .map((cap, i) => ({ cap, i }))
+      .filter((x) => x.cap > 0)
+      .sort((a, b) => b.cap - a.cap);
+
+    for (let k = 1; k <= indexed.length; k++) {
+      const chosen = indexed.slice(0, k);
+      const sumCap = chosen.reduce((s, x) => s + x.cap, 0);
+      if (sumCap < n) continue;
+
+      let minPerEff = Math.max(1, minPer);
+      let mins = chosen.map((x) => Math.min(minPerEff, x.cap));
+      let minSum = mins.reduce((a, b) => a + b, 0);
+      while (minSum > n && minPerEff > 1) {
+        minPerEff -= 1;
+        mins = chosen.map((x) => Math.min(minPerEff, x.cap));
+        minSum = mins.reduce((a, b) => a + b, 0);
+      }
+      if (minSum > n) continue;
+
+      const sizes = [...mins];
+      let left = n - minSum;
+      while (left > 0) {
+        let placed = false;
+        for (let i = 0; i < k && left > 0; i++) {
+          if (sizes[i] < chosen[i].cap) {
+            sizes[i] += 1;
+            left -= 1;
+            placed = true;
+          }
+        }
+        if (!placed) break;
+      }
+      if (left > 0) continue;
+
+      return sizes.filter((s) => s > 0).sort((a, b) => b - a);
+    }
+    return null;
+  };
+
+  // 1) Intento “cómodo” (Commander 3–4) sin usar sillas por encima de softMax
+  const softCaps = caps.map((c) => Math.min(c, softMax));
+  if (softCaps.reduce((a, b) => a + b, 0) >= n) {
+    const soft = pack(softCaps, minPerTable);
+    if (soft) return soft;
+  }
+
+  // 2) Hace falta aprovechar sillas extra del plano
+  const full = pack(caps, minPerTable);
+  if (full) return full;
+
+  // 3) Último recurso: llenar mesas grandes primero
+  const greedy = [];
+  let left = n;
+  const sorted = [...caps].sort((a, b) => b - a);
+  for (const cap of sorted) {
+    if (left <= 0) break;
+    const take = Math.min(cap, left);
+    if (take > 0) {
+      greedy.push(take);
+      left -= take;
+    }
+  }
+  return left === 0 ? greedy.sort((a, b) => b - a) : [];
+}
+
+/**
  * Calcula tamaños de mesa según config.
  */
 export function computeTableSizes(n, configInput = {}) {
   const cfg = normalizeCommanderConfig(configInput);
   const { minPerTable: min, maxPerTable: max } = cfg;
 
-  if (n < min) return [];
+  if (n < min && !Array.isArray(cfg.exactSizes)) return [];
 
   /** Tamaños forzados (p. ej. sillas por mesa del plano de sala). */
   if (Array.isArray(cfg.exactSizes) && cfg.exactSizes.length) {
@@ -83,6 +165,14 @@ export function computeTableSizes(n, configInput = {}) {
     const sum = sizes.reduce((a, b) => a + b, 0);
     if (sum === n) return sizes;
     return [];
+  }
+
+  /** Capacidades del plano (sillas por mesa), no necesariamente llenas. */
+  if (Array.isArray(cfg.roomCapacities) && cfg.roomCapacities.length) {
+    return computeSizesForRoomCapacities(n, cfg.roomCapacities, {
+      minPerTable: min,
+      softMax: Math.max(max, 4),
+    });
   }
 
   if (cfg.tableCountMode === "fixed") {

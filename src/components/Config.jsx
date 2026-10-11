@@ -130,13 +130,6 @@ export default function Config() {
             checked={config.confettiEnabled}
             onChange={(v) => updateConfig({ confettiEnabled: v })}
           />
-
-          <Toggle
-            label="Eliminar ganador automáticamente"
-            description="Si está off, pide confirmación tras cada tirada"
-            checked={config.autoRemoveWinner}
-            onChange={(v) => updateConfig({ autoRemoveWinner: v })}
-          />
         </div>
       </section>
     </div>

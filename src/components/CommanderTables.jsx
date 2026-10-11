@@ -236,17 +236,21 @@ export default function CommanderTables() {
       };
     }
 
-    // Menos jugadores que sillas: no forzar usar todas las mesas.
-    // Auto + preferir llenas → p. ej. 15 con 5 mesas de 4 → 4+4+4+3 (1 vacía).
-    return normalizeCommanderConfig({
-      ...cmdConfig,
-      tableCountMode: "auto",
-      preferLargerTables: true,
-      maxTableCount: roomSizes.length,
-      minPerTable: Math.min(cmdConfig.minPerTable, seatMin),
-      maxPerTable: Math.min(cmdConfig.maxPerTable, seatMax),
-      allowOversizedFallback: true,
-    });
+    // Usa sillas reales por mesa del plano (incluye sillas extra que añadas).
+    // Si cabe en 3–4, reparte así; si no, aprovecha las sillas de más.
+    return {
+      ...normalizeCommanderConfig({
+        ...cmdConfig,
+        tableCountMode: "auto",
+        preferLargerTables: true,
+        maxTableCount: roomSizes.length,
+        minPerTable: Math.min(cmdConfig.minPerTable, seatMin),
+        // No limitar al máx. de opciones si una mesa del plano tiene más sillas
+        maxPerTable: Math.max(cmdConfig.maxPerTable, seatMax),
+        allowOversizedFallback: true,
+      }),
+      roomCapacities: roomSizes,
+    };
   }, [useRoomCapacity, roomSizes, cmdConfig, pool.length]);
 
   const previewSizes = useMemo(
@@ -403,7 +407,6 @@ export default function CommanderTables() {
         playerCount: result.playerCount,
         at: Date.now(),
       });
-      setViewMode("sala");
       if (result.relaxed) {
         setToast(
           "No se encontró reparto perfecto anti-repetición a tiempo; se usó el mejor random posible.",
@@ -449,12 +452,12 @@ export default function CommanderTables() {
     {
       id: "reparto",
       label: "Reparto",
-      hint: "Generar mesas al azar",
+      hint: "Generar y ver el resultado",
     },
     {
       id: "sala",
       label: "Vista sala",
-      hint: "Ver jugadores en el plano",
+      hint: "Mismo reparto sobre el plano",
     },
     {
       id: "diseno",
@@ -756,7 +759,7 @@ export default function CommanderTables() {
                   label="Usar plano de sala"
                   description={
                     roomSeatTotal
-                      ? `Tope: ${roomSizes.length} mesas · ${roomSeatTotal} sillas. Prefiere mesas llenas y puede dejar mesas vacías (p. ej. 15 → 4+4+4+3).`
+                      ? `Sillas por mesa: ${roomSizes.join("+")} (${roomSeatTotal} total). Prefiere 3–4; si hace falta, usa las sillas extra.`
                       : "Diseña la sala primero para fijar mesas y sillas"
                   }
                   checked={useRoomCapacity}
@@ -942,6 +945,15 @@ export default function CommanderTables() {
               >
                 Limpiar resultado
               </button>
+              {tables.length > 0 && roomLayout.tables.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-ghost rounded-xl px-4 py-3 text-sm ring-1 ring-mtg-gold/35"
+                  onClick={() => setViewMode("sala")}
+                >
+                  Ver en plano de sala
+                </button>
+              )}
             </div>
 
             <AnimatePresence>
@@ -986,13 +998,13 @@ export default function CommanderTables() {
                   : pool.length > roomSeatTotal
                     ? " · faltan sillas"
                     : " · hay sillas libres"}
-                . Tras generar se abre la{" "}
+                . El resultado se muestra aquí; el plano está en{" "}
                 <button
                   type="button"
                   className="underline text-mtg-gold"
                   onClick={() => setViewMode("sala")}
                 >
-                  vista sala
+                  Vista sala
                 </button>
                 .
               </p>

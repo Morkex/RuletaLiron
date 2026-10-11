@@ -302,20 +302,6 @@ export function AppProvider({ children }) {
 
     finishLockRef.current = true;
 
-    if (config.autoRemoveWinner) {
-      markWinnerEliminated(current.winner, current.prize);
-      setCurrentPrizeIndex((idx) => {
-        const next = idx + 1;
-        return next < prizes.length ? next : idx;
-      });
-      setWinnerModal(null);
-      setSpinResult(null);
-      spinResultRef.current = null;
-      spinLockRef.current = false;
-      finishLockRef.current = false;
-      return;
-    }
-
     setWinnerModal({
       winner: current.winner,
       prize: current.prize,
@@ -324,7 +310,7 @@ export function AppProvider({ children }) {
     });
     // Mantener spinResult hasta confirmar; liberar finishLock para no bloquear confirm
     finishLockRef.current = false;
-  }, [config.autoRemoveWinner, prizes.length, markWinnerEliminated]);
+  }, []);
 
   const confirmWinner = useCallback(
     (remove) => {

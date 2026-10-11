@@ -10,7 +10,9 @@ export default function EmptyParticipantsModal() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (participants.length === 0 && tab !== "participantes") {
+    // Premios y configuración no necesitan lista de jugadores
+    const needsParticipants = tab !== "participantes" && tab !== "premios" && tab !== "config";
+    if (participants.length === 0 && needsParticipants) {
       setOpen(true);
     } else {
       setOpen(false);
