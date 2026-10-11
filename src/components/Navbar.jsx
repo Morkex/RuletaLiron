@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { TABS } from "../lib/constants";
 import { useApp } from "../context/AppContext";
 import LironRunnerGame from "./LironRunnerGame";
+import LironKonamiBattle from "./LironKonamiBattle";
+import { useKonamiCode } from "../hooks/useKonamiCode";
 
 const EGG_CLICKS = 7;
 const EGG_WINDOW_MS = 2500;
@@ -10,7 +12,10 @@ export default function Navbar() {
   const { tab, setTab, toggleMusic, config, setShowFairPlay, participants, prizes } =
     useApp();
   const [showRunner, setShowRunner] = useState(false);
+  const [showBattle, setShowBattle] = useState(false);
   const clicksRef = useRef({ count: 0, timer: null });
+
+  useKonamiCode(() => setShowBattle(true));
 
   const onLogoEggClick = () => {
     const bag = clicksRef.current;
@@ -94,6 +99,7 @@ export default function Navbar() {
       </div>
 
       <LironRunnerGame open={showRunner} onClose={() => setShowRunner(false)} />
+      <LironKonamiBattle open={showBattle} onClose={() => setShowBattle(false)} />
     </header>
   );
 }

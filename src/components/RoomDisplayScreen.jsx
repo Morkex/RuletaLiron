@@ -4,6 +4,7 @@ import {
   loadSalaDisplay,
   SALA_DISPLAY_CHANNEL,
   SALA_DISPLAY_STORAGE,
+  formatRoundTimer,
 } from "../lib/salaDisplay";
 import { normalizeRoomLayout } from "../lib/roomLayout";
 
@@ -14,6 +15,7 @@ import { normalizeRoomLayout } from "../lib/roomLayout";
 export default function RoomDisplayScreen() {
   const [snap, setSnap] = useState(() => loadSalaDisplay());
   const [fsError, setFsError] = useState("");
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     document.title = "Sala Commander · El Lirón";
@@ -45,12 +47,21 @@ export default function RoomDisplayScreen() {
       }
     }, 1200);
 
+    const tick = setInterval(() => setNow(Date.now()), 250);
+
     return () => {
       window.removeEventListener("storage", onStorage);
       clearInterval(poll);
+      clearInterval(tick);
       bc?.close?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (snap?.roundLabel) {
+      document.title = `${snap.roundLabel} · Sala Commander · El Lirón`;
+    }
+  }, [snap?.roundLabel]);
 
   const goFullscreen = useCallback(async () => {
     setFsError("");
@@ -71,6 +82,15 @@ export default function RoomDisplayScreen() {
   const tableLabels = snap?.tableLabels ?? {};
   const hasPlayers = Object.keys(seatPlayers).length > 0;
 
+  const pausedMs = snap?.roundPausedElapsedMs;
+  const startedAt = Number(snap?.roundStartedAt) || now;
+  const elapsedMs =
+    pausedMs != null && !Number.isNaN(pausedMs)
+      ? pausedMs
+      : Math.max(0, now - startedAt);
+  const roundLabel = snap?.roundLabel || "Ronda 1";
+  const timerPaused = pausedMs != null && !Number.isNaN(pausedMs);
+
   return (
     <div className="flex min-h-screen flex-col bg-mtg-void text-mtg-frost">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-mtg-gold/25 px-4 py-3 md:px-8">
@@ -86,11 +106,30 @@ export default function RoomDisplayScreen() {
               alt="El Lirón"
               className="h-8 w-auto max-w-[200px] object-contain object-left"
             />
-            <p className="font-display text-sm text-mtg-gold-bright md:text-base">
-              {snap?.title || "Mesas Commander"}
+            <p className="text-xs text-mtg-frost/50 md:text-sm">
+              Mesas Commander
             </p>
           </div>
         </div>
+
+        <div className="flex flex-col items-center text-center">
+          <p className="font-display text-2xl text-mtg-gold-bright md:text-4xl">
+            {roundLabel}
+          </p>
+          <p
+            className={`mt-1 font-mono text-3xl tracking-wider md:text-5xl ${
+              timerPaused ? "text-mtg-ember" : "text-mtg-frost"
+            }`}
+          >
+            {formatRoundTimer(elapsedMs)}
+          </p>
+          {timerPaused && (
+            <p className="mt-0.5 text-[11px] uppercase tracking-widest text-mtg-ember/80">
+              Pausado
+            </p>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           {fsError && (
             <span className="text-xs text-mtg-ember">{fsError}</span>

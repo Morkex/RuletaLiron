@@ -9,6 +9,14 @@ export function publishSalaDisplay(payload) {
     seatPlayers: payload.seatPlayers ?? {},
     tableLabels: payload.tableLabels ?? {},
     title: payload.title || "Mesas Commander",
+    roundLabel: payload.roundLabel || "Ronda 1",
+    roundNumber: Number(payload.roundNumber) || 1,
+    roundStartedAt: Number(payload.roundStartedAt) || Date.now(),
+    /** Si > 0, el cronómetro está pausado y muestra este valor fijo (ms) */
+    roundPausedElapsedMs:
+      payload.roundPausedElapsedMs == null
+        ? null
+        : Number(payload.roundPausedElapsedMs),
     at: Date.now(),
   };
   try {
@@ -48,4 +56,25 @@ export function isSalaDisplayMode() {
   } catch {
     return false;
   }
+}
+
+/** Formatea ms → 12:34 o 1:02:03 */
+export function formatRoundTimer(ms) {
+  const totalSec = Math.max(0, Math.floor(Number(ms) / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+export function defaultRoundLabel(roundNumber) {
+  return `Ronda ${Math.max(1, Number(roundNumber) || 1)}`;
+}
+
+export function resolveRoundLabel(roundTitle, roundNumber) {
+  const custom = String(roundTitle || "").trim();
+  return custom || defaultRoundLabel(roundNumber);
 }

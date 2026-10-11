@@ -202,14 +202,14 @@ export const CUSTOM_TEMPLATE_SLOTS = 6;
 
 export const BUILTIN_ROOM_TEMPLATES = [
   {
-    id: "builtin-5",
-    name: "Grande + 4 marrones",
-    description: "Mesa negra grande y cuatro marrones",
-  },
-  {
     id: "builtin-4",
     name: "4 mesas marrones",
     description: "Solo las cuatro mesas pequeñas",
+  },
+  {
+    id: "builtin-5",
+    name: "Grande + 4 marrones",
+    description: "Mesa negra grande y cuatro marrones",
   },
 ];
 

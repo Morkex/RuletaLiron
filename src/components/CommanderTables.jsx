@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApp } from "../context/AppContext";
 import {
@@ -22,7 +22,12 @@ import RoomDesigner from "./RoomDesigner";
 import RoomTemplatesBar from "./RoomTemplatesBar";
 import AvoidPairsModal from "./AvoidPairsModal";
 import { shortPlayerName } from "../lib/shortName";
-import { publishSalaDisplay, salaDisplayUrl } from "../lib/salaDisplay";
+import {
+  publishSalaDisplay,
+  salaDisplayUrl,
+  resolveRoundLabel,
+  formatRoundTimer,
+} from "../lib/salaDisplay";
 
 const CMD_STORAGE = "ruletaliron-commander-v2";
 
@@ -202,8 +207,32 @@ export default function CommanderTables() {
   const [avoidPairs, setAvoidPairs] = useState(() =>
     normalizeAvoidPairs(stored?.avoidPairs ?? []),
   );
+  const [roundNumber, setRoundNumber] = useState(
+    () => Math.max(1, Number(stored?.roundNumber) || 1),
+  );
+  /** Vacío = usar automáticamente "Ronda N" */
+  const [roundTitle, setRoundTitle] = useState(
+    () => String(stored?.roundTitle ?? ""),
+  );
+  const [roundStartedAt, setRoundStartedAt] = useState(
+    () => Number(stored?.roundStartedAt) || Date.now(),
+  );
+  /** null = en marcha; número = ms congelados al pausar */
+  const [roundPausedElapsedMs, setRoundPausedElapsedMs] = useState(() =>
+    stored?.roundPausedElapsedMs == null
+      ? null
+      : Number(stored.roundPausedElapsedMs),
+  );
+  const [timerNow, setTimerNow] = useState(() => Date.now());
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+
+  const roundLabel = resolveRoundLabel(roundTitle, roundNumber);
+  const timerElapsedMs =
+    roundPausedElapsedMs != null
+      ? roundPausedElapsedMs
+      : Math.max(0, timerNow - roundStartedAt);
+  const timerRunning = roundPausedElapsedMs == null;
 
   const updateCmd = (patch) => {
     setCmdConfig((prev) => normalizeCommanderConfig({ ...prev, ...patch }));
@@ -278,6 +307,10 @@ export default function CommanderTables() {
           roomLayout,
           useRoomCapacity,
           avoidPairs,
+          roundNumber,
+          roundTitle,
+          roundStartedAt,
+          roundPausedElapsedMs,
         }),
       );
     } catch {
@@ -291,6 +324,10 @@ export default function CommanderTables() {
     roomLayout,
     useRoomCapacity,
     avoidPairs,
+    roundNumber,
+    roundTitle,
+    roundStartedAt,
+    roundPausedElapsedMs,
   ]);
 
   useEffect(() => {
@@ -298,13 +335,60 @@ export default function CommanderTables() {
   }, [tplState]);
 
   useEffect(() => {
+    if (!timerRunning) return undefined;
+    const id = setInterval(() => setTimerNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [timerRunning]);
+
+  const publishDisplay = useCallback(() => {
     publishSalaDisplay({
       layout: roomLayout,
       seatPlayers,
       tableLabels: roomLabels,
       title: "Mesas Commander",
+      roundLabel,
+      roundNumber,
+      roundStartedAt,
+      roundPausedElapsedMs,
     });
-  }, [roomLayout, seatPlayers, roomLabels]);
+  }, [
+    roomLayout,
+    seatPlayers,
+    roomLabels,
+    roundLabel,
+    roundNumber,
+    roundStartedAt,
+    roundPausedElapsedMs,
+  ]);
+
+  useEffect(() => {
+    publishDisplay();
+  }, [publishDisplay]);
+
+  const resetRoundTimer = () => {
+    setRoundStartedAt(Date.now());
+    setRoundPausedElapsedMs(null);
+    setTimerNow(Date.now());
+  };
+
+  const toggleRoundTimer = () => {
+    if (timerRunning) {
+      setRoundPausedElapsedMs(Math.max(0, Date.now() - roundStartedAt));
+    } else {
+      const base = roundPausedElapsedMs ?? 0;
+      setRoundStartedAt(Date.now() - base);
+      setRoundPausedElapsedMs(null);
+      setTimerNow(Date.now());
+    }
+  };
+
+  const goNextRound = () => {
+    setRoundNumber((n) => n + 1);
+    setRoundTitle("");
+    resetRoundTimer();
+    setToast(`Pasando a Ronda ${roundNumber + 1}`);
+    setTimeout(() => setToast(""), 2500);
+  };
 
   useEffect(() => {
     const onKey = (e) => {
@@ -546,54 +630,117 @@ export default function CommanderTables() {
               />
             )}
             {viewMode === "sala" && (
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="text-xs text-mtg-frost/50">Plantilla:</label>
-                <select
-                  value={tplState.activeId}
-                  onChange={(e) => applyRoomTemplate(e.target.value)}
-                  className="rounded-lg border border-mtg-gold/25 bg-mtg-ink/80 px-2 py-1.5 text-sm outline-none focus:border-mtg-gold/60"
-                >
-                  <option value="builtin-5">Grande + 4 marrones</option>
-                  <option value="builtin-4">4 mesas marrones</option>
-                  {tplState.customSlots
-                    .filter((s) => s.layout)
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name || `Slot ${s.slot}`}
-                      </option>
-                    ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn-ghost rounded-md px-2 py-1 text-xs"
-                  onClick={() => setViewMode("diseno")}
-                >
-                  Editar / guardar plantillas
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary rounded-md px-3 py-1.5 text-sm"
-                  onClick={() => {
-                    publishSalaDisplay({
-                      layout: roomLayout,
-                      seatPlayers,
-                      tableLabels: roomLabels,
-                      title: "Mesas Commander",
-                    });
-                    const w = window.open(
-                      salaDisplayUrl(),
-                      "ruletaliron-sala-display",
-                    );
-                    if (!w) {
-                      setToast(
-                        "El navegador bloqueó la ventana. Permite pop-ups para este sitio.",
+              <div className="space-y-3">
+                <div className="rounded-xl border border-mtg-gold/25 bg-mtg-void/50 p-3 md:p-4">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div className="min-w-[200px] flex-1">
+                      <label className="mb-1 block font-display text-xs text-mtg-gold">
+                        Título de la ronda
+                      </label>
+                      <input
+                        type="text"
+                        value={roundTitle}
+                        onChange={(e) => setRoundTitle(e.target.value)}
+                        placeholder={`Ronda ${roundNumber} (auto)`}
+                        className="w-full rounded-lg border border-mtg-gold/25 bg-mtg-ink/80 px-3 py-2 text-sm outline-none focus:border-mtg-gold/60"
+                      />
+                      <p className="mt-1 text-[11px] text-mtg-frost/45">
+                        Vacío = automático. Ej: Semifinales, Final…
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="font-display text-lg text-mtg-gold-bright">
+                        {roundLabel}
+                      </p>
+                      <p
+                        className={`font-mono text-2xl tracking-wider ${
+                          timerRunning ? "text-mtg-frost" : "text-mtg-ember"
+                        }`}
+                      >
+                        {formatRoundTimer(timerElapsedMs)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="btn-ghost rounded-md px-3 py-1.5 text-xs"
+                        onClick={toggleRoundTimer}
+                      >
+                        {timerRunning ? "Pausar" : "Reanudar"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost rounded-md px-3 py-1.5 text-xs"
+                        onClick={resetRoundTimer}
+                      >
+                        Reiniciar cronómetro
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost rounded-md px-3 py-1.5 text-xs"
+                        onClick={() => {
+                          setRoundNumber((n) => Math.max(1, n - 1));
+                          setRoundTitle("");
+                        }}
+                        disabled={roundNumber <= 1}
+                      >
+                        Ronda −
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-primary rounded-md px-3 py-1.5 text-xs"
+                        onClick={goNextRound}
+                      >
+                        Siguiente ronda
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs text-mtg-frost/50">Plantilla:</label>
+                  <select
+                    value={tplState.activeId}
+                    onChange={(e) => applyRoomTemplate(e.target.value)}
+                    className="rounded-lg border border-mtg-gold/25 bg-mtg-ink/80 px-2 py-1.5 text-sm outline-none focus:border-mtg-gold/60"
+                  >
+                    <option value="builtin-5">Grande + 4 marrones</option>
+                    <option value="builtin-4">4 mesas marrones</option>
+                    {tplState.customSlots
+                      .filter((s) => s.layout)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name || `Slot ${s.slot}`}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn-ghost rounded-md px-2 py-1 text-xs"
+                    onClick={() => setViewMode("diseno")}
+                  >
+                    Editar / guardar plantillas
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary rounded-md px-3 py-1.5 text-sm"
+                    onClick={() => {
+                      publishDisplay();
+                      const w = window.open(
+                        salaDisplayUrl(),
+                        "ruletaliron-sala-display",
                       );
-                      setTimeout(() => setToast(""), 4000);
-                    }
-                  }}
-                >
-                  Abrir en pantalla completa
-                </button>
+                      if (!w) {
+                        setToast(
+                          "El navegador bloqueó la ventana. Permite pop-ups para este sitio.",
+                        );
+                        setTimeout(() => setToast(""), 4000);
+                      }
+                    }}
+                  >
+                    Abrir en pantalla completa
+                  </button>
+                </div>
               </div>
             )}
             <RoomDesigner

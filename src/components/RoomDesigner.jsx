@@ -388,7 +388,13 @@ export default function RoomDesigner({
               }}
             >
               {label && (
-                <span className="absolute left-1/2 top-1.5 max-w-[92%] -translate-x-1/2 truncate rounded bg-black/40 px-1 py-0.5 text-center font-display text-[9px] text-mtg-frost/85 md:text-[10px]">
+                <span
+                  className={`absolute left-1/2 top-1.5 max-w-[94%] -translate-x-1/2 truncate rounded bg-black/55 text-center font-display font-semibold uppercase tracking-wide text-mtg-frost ${
+                    presentation
+                      ? "px-2 py-1 text-sm md:px-2.5 md:py-1 md:text-base"
+                      : "px-1.5 py-0.5 text-xs md:text-sm"
+                  }`}
+                >
                   {label}
                 </span>
               )}
