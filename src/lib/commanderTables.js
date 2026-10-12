@@ -683,7 +683,6 @@ export function pickUnitsForCapacity(
   const list = Array.isArray(units) ? [...units] : [];
   const slots = Math.max(0, Math.floor(Number(slotCount) || 0));
   if (slots <= 0) return { active: [], waiting: list };
-  if (list.length <= slots) return { active: list, waiting: [] };
 
   const waitKeys = new Set();
   for (const w of previousWaiting || []) {
@@ -705,7 +704,10 @@ export function pickUnitsForCapacity(
     else rest.push(unit);
   }
 
+  // Siempre barajar (aunque quepan todos): si no, el empaquetado
+  // deja siempre la misma cola en espera al regenerar.
   const ordered = [...cryptoShuffle(priority), ...cryptoShuffle(rest)];
+  if (list.length <= slots) return { active: ordered, waiting: [] };
   return {
     active: ordered.slice(0, slots),
     waiting: ordered.slice(slots),
