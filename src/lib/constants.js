@@ -50,6 +50,21 @@ export const MUSIC_PRESETS = [
   },
 ];
 
+/** Modos extra de mesas (excluyentes). none = Commander normal. */
+export const EXTRA_MODES = [
+  { id: "none", label: "Ninguno (Commander normal)" },
+  { id: "archenemy", label: "Activar Archenemy" },
+  { id: "twoHeaded", label: "Activar Dos Cabezas" },
+];
+
+export function normalizeExtraMode(raw) {
+  const id = String(raw?.extraMode || "").trim();
+  if (id === "archenemy" || id === "twoHeaded" || id === "none") return id;
+  // Migración desde el antiguo flag booleano
+  if (raw?.twoHeadedGiant) return "twoHeaded";
+  return "none";
+}
+
 export const CONFIG_DEFAULTS = {
   spinDuration: 8,
   musicVolume: 0.3,
@@ -59,6 +74,11 @@ export const CONFIG_DEFAULTS = {
   customMusicUrl2: "",
   confettiEnabled: true,
   musicEnabled: false,
+  /**
+   * Modo extra de mesas: "none" | "archenemy" | "twoHeaded"
+   * Solo uno activo a la vez.
+   */
+  extraMode: "none",
 };
 
 /**

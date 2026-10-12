@@ -8,9 +8,20 @@ import {
   useState,
 } from "react";
 import { MusicPlayer, unlockAudio } from "../lib/audio";
-import { CONFIG_DEFAULTS, DEFAULT_PRIZES } from "../lib/constants";
+import {
+  CONFIG_DEFAULTS,
+  DEFAULT_PRIZES,
+  normalizeExtraMode,
+} from "../lib/constants";
 import { fairSpin } from "../lib/fairRandom";
-import { parseParticipants } from "../lib/parseParticipants";
+import {
+  coerceTwoHeadedPairs,
+  parseParticipants,
+} from "../lib/parseParticipants";
+import {
+  expandTwoHeadedForSpin,
+  splitTwoHeadedMembers,
+} from "../lib/commanderTables";
 
 const AppContext = createContext(null);
 const STORAGE_KEY = "ruletaliron-v2";
@@ -39,9 +50,9 @@ export function AppProvider({ children }) {
   const [currentPrizeIndex, setCurrentPrizeIndex] = useState(
     stored?.currentPrizeIndex ?? 0,
   );
-  const [config, setConfig] = useState({
-    ...CONFIG_DEFAULTS,
-    ...(stored?.config ?? {}),
+  const [config, setConfig] = useState(() => {
+    const merged = { ...CONFIG_DEFAULTS, ...(stored?.config ?? {}) };
+    return { ...merged, extraMode: normalizeExtraMode(merged) };
   });
   const [auditLog, setAuditLog] = useState(stored?.auditLog ?? []);
   const [spinResult, setSpinResult] = useState(null);
@@ -135,10 +146,33 @@ export function AppProvider({ children }) {
   const markWinnerEliminated = useCallback((winnerName, prize) => {
     const prizeLabel =
       typeof prize === "string" ? prize : prize?.name ?? "Premio";
-    setParticipants((prev) => prev.filter((p) => p !== winnerName));
+    const winKey = String(winnerName || "")
+      .trim()
+      .toLocaleLowerCase("es");
+
+    setParticipants((prev) => {
+      const next = [];
+      for (const p of prev) {
+        const parts = splitTwoHeadedMembers(p);
+        if (parts.length === 2) {
+          // Sorteo: cada persona es independiente; quitar solo al ganador
+          const remaining = parts.filter(
+            (m) => m.toLocaleLowerCase("es") !== winKey,
+          );
+          if (remaining.length === 2) next.push(p);
+          else if (remaining.length === 1) next.push(remaining[0]);
+          continue;
+        }
+        if (String(p).trim().toLocaleLowerCase("es") !== winKey) {
+          next.push(p);
+        }
+      }
+      return next;
+    });
     setEliminated((prev) => {
-      const key = winnerName.toLocaleLowerCase("es");
-      const withoutDup = prev.filter((e) => e.name.toLocaleLowerCase("es") !== key);
+      const withoutDup = prev.filter(
+        (e) => e.name.toLocaleLowerCase("es") !== winKey,
+      );
       return [
         {
           id: uid("elim"),
@@ -151,12 +185,21 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  const importRawList = useCallback((raw) => {
-    const parsed = parseParticipants(raw);
-    setParticipants(parsed);
-    setEliminated([]);
-    return parsed.length;
-  }, []);
+  const importRawList = useCallback(
+    (raw, opts = {}) => {
+      let parsed = parseParticipants(raw);
+      const asTwoHeaded =
+        opts.asTwoHeaded === true ||
+        (opts.asTwoHeaded !== false && config.extraMode === "twoHeaded");
+      if (asTwoHeaded) {
+        parsed = coerceTwoHeadedPairs(parsed);
+      }
+      setParticipants(parsed);
+      setEliminated([]);
+      return parsed.length;
+    },
+    [config.extraMode],
+  );
 
   const addParticipant = useCallback((name) => {
     const trimmed = name.trim();
@@ -240,7 +283,13 @@ export function AppProvider({ children }) {
   );
 
   const updateConfig = useCallback((patch) => {
-    setConfig((prev) => ({ ...prev, ...patch }));
+    setConfig((prev) => {
+      const next = { ...prev, ...patch };
+      if ("extraMode" in patch || "twoHeadedGiant" in patch) {
+        next.extraMode = normalizeExtraMode(next);
+      }
+      return next;
+    });
   }, []);
 
   const beginSpin = useCallback(async () => {
@@ -260,7 +309,12 @@ export function AppProvider({ children }) {
     await unlockAudio();
 
     try {
-      const draw = fairSpin(participants);
+      // En Dos Cabezas la lista guarda parejas, pero el sorteo es persona a persona
+      const spinPool =
+        config.extraMode === "twoHeaded"
+          ? expandTwoHeadedForSpin(participants)
+          : participants;
+      const draw = fairSpin(spinPool);
       const result = { ...draw, prize: currentPrize };
       const entry = {
         id: uid("audit"),
@@ -273,7 +327,7 @@ export function AppProvider({ children }) {
         sectorIndex: draw.index,
         prize: currentPrize.name,
         timestamp: draw.timestamp,
-        participantsCount: participants.length,
+        participantsCount: spinPool.length,
       };
 
       spinResultRef.current = result;
@@ -288,7 +342,15 @@ export function AppProvider({ children }) {
       spinResultRef.current = null;
       return null;
     }
-  }, [isSpinning, spinResult, winnerModal, participants, currentPrize, auditLog.length]);
+  }, [
+    isSpinning,
+    spinResult,
+    winnerModal,
+    participants,
+    currentPrize,
+    auditLog.length,
+    config.extraMode,
+  ]);
 
   const finishSpin = useCallback(() => {
     if (finishLockRef.current) return;

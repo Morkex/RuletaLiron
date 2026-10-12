@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useApp } from "../context/AppContext";
 import Wheel from "./Wheel";
 import PrizeQueue from "./PrizeQueue";
+import { expandTwoHeadedForSpin } from "../lib/commanderTables";
 
 export default function SorteoScreen() {
   const {
@@ -32,15 +33,23 @@ export default function SorteoScreen() {
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  const spinPool = useMemo(
+    () =>
+      config.extraMode === "twoHeaded"
+        ? expandTwoHeadedForSpin(participants)
+        : participants,
+    [participants, config.extraMode],
+  );
+
   const canSpin =
     !isSpinning &&
     !spinResult &&
-    participants.length > 0 &&
+    spinPool.length > 0 &&
     Boolean(currentPrize);
 
   const pct = useMemo(
-    () => (participants.length ? (100 / participants.length).toFixed(2) : "0"),
-    [participants.length],
+    () => (spinPool.length ? (100 / spinPool.length).toFixed(2) : "0"),
+    [spinPool.length],
   );
 
   const handleLaunch = useCallback(async () => {
@@ -48,11 +57,20 @@ export default function SorteoScreen() {
   }, [beginSpin]);
 
   const handleWheelDoubleClick = useCallback(() => {
-    if (isSpinning || spinResult || participants.length === 0 || !currentPrize) {
+    if (isSpinning || spinResult || spinPool.length === 0 || !currentPrize) {
       return;
     }
     handleLaunch();
-  }, [isSpinning, spinResult, participants.length, currentPrize, handleLaunch]);
+  }, [isSpinning, spinResult, spinPool.length, currentPrize, handleLaunch]);
+
+  const winnerOnWheel =
+    Boolean(spinResult) &&
+    !isSpinning &&
+    spinPool.some(
+      (p) =>
+        p.toLocaleLowerCase("es") ===
+        String(spinResult.winner).toLocaleLowerCase("es"),
+    );
 
   return (
     <div className="mx-auto max-w-[1600px]">
@@ -90,7 +108,11 @@ export default function SorteoScreen() {
               <p className="mt-2 text-sm text-mtg-frost/65 md:text-base">
                 Premio {Math.min(currentPrizeIndex + 1, prizes.length)} de {prizes.length}
                 {" · "}
-                {participants.length} participantes · {pct}% cada uno
+                {config.extraMode === "twoHeaded"
+                  ? `${spinPool.length} jugadores (${participants.length} parejas)`
+                  : `${participants.length} participantes`}
+                {" · "}
+                {pct}% cada uno
               </p>
             </div>
           </div>
@@ -116,14 +138,10 @@ export default function SorteoScreen() {
             className={canSpin ? "cursor-pointer" : "cursor-default"}
           >
             <Wheel
-              key={`wheel-${participants.length}-${participants[0] ?? "empty"}`}
-              participants={participants}
+              key={`wheel-${spinPool.length}-${spinPool[0] ?? "empty"}-${config.extraMode || "none"}`}
+              participants={spinPool}
               targetAngle={spinResult?.finalAngle ?? null}
-              winnerName={
-                spinResult && !isSpinning && participants.includes(spinResult.winner)
-                  ? spinResult.winner
-                  : null
-              }
+              winnerName={winnerOnWheel ? spinResult.winner : null}
               spinning={isSpinning}
               durationSec={config.spinDuration}
               sfxVolume={config.sfxVolume}
@@ -138,7 +156,7 @@ export default function SorteoScreen() {
             </p>
           )}
 
-          {spinResult && !isSpinning && participants.includes(spinResult.winner) && (
+          {winnerOnWheel && (
             <motion.div
               className="mt-6 w-full max-w-xl rounded-xl border border-mtg-gold/40 bg-mtg-void/70 p-5 text-center gold-glow"
               initial={{ opacity: 0, scale: 0.92 }}
@@ -155,7 +173,7 @@ export default function SorteoScreen() {
 
           {!canSpin && !isSpinning && !spinResult && (
             <p className="mt-4 text-center text-sm text-mtg-frost/50">
-              {participants.length === 0 && "Necesitas participantes en la lista. "}
+              {spinPool.length === 0 && "Necesitas participantes en la lista. "}
               {!currentPrize && "Necesitas un premio en cola. "}
             </p>
           )}

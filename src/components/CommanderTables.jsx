@@ -8,7 +8,15 @@ import {
   COMMANDER_CONFIG_DEFAULTS,
   normalizeCommanderConfig,
   normalizeAvoidPairs,
+  poolSeatCount,
+  looksLikeTwoHeadedEntry,
+  packTwoHeadedTeamsIntoRoom,
+  packFixedSizeIntoRoom,
+  parseTwoHeadedTeams,
+  buildTeamColorByPlayer,
+  twoHeadedTeamColor,
 } from "../lib/commanderTables";
+import { normalizeExtraMode } from "../lib/constants";
 import {
   normalizeRoomLayout,
   mapPodsToRoom,
@@ -21,6 +29,7 @@ import {
 import RoomDesigner from "./RoomDesigner";
 import RoomTemplatesBar from "./RoomTemplatesBar";
 import AvoidPairsModal from "./AvoidPairsModal";
+import WaitingBench from "./WaitingBench";
 import { shortPlayerName } from "../lib/shortName";
 import {
   publishSalaDisplay,
@@ -43,12 +52,28 @@ function loadCommander() {
   }
 }
 
-function Seat({ name, index, total, peers = [] }) {
+function Seat({
+  name,
+  index,
+  total,
+  peers = [],
+  archenemy = false,
+  teamColor = null,
+}) {
   // Coordenadas sobre el contenedor (no sobre el label): % del padre.
   const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
   const radius = total >= 5 ? 38 : 36;
   const left = 50 + radius * Math.cos(angle);
   const top = 50 + radius * Math.sin(angle);
+
+  const teamStyle =
+    !archenemy && teamColor
+      ? {
+          borderColor: teamColor,
+          backgroundColor: "#0a1018",
+          boxShadow: `inset 0 0 0 1px ${teamColor}55, 0 0 0 1px ${teamColor}, 0 4px 14px rgba(0,0,0,0.7)`,
+        }
+      : undefined;
 
   return (
     <div
@@ -58,16 +83,34 @@ function Seat({ name, index, total, peers = [] }) {
         top: `${top}%`,
         transform: "translate(-50%, -50%)",
       }}
-      title={name}
+      title={archenemy ? `${name} · Archenemy` : name}
     >
       <div
-        className="rounded-md border border-mtg-gold/45 bg-mtg-ink/95 px-1.5 py-1 text-center shadow-[0_4px_14px_rgba(0,0,0,0.55)]"
-        title={name}
+        className={`rounded-md px-1.5 py-1 text-center ${
+          archenemy
+            ? "border-2 border-mtg-mana-r bg-gradient-to-b from-[#3a0a0a] via-[#1a0505] to-black shadow-[0_0_14px_rgba(196,107,90,0.55),0_4px_12px_rgba(0,0,0,0.7)]"
+            : teamColor
+              ? "border-2"
+              : "border border-mtg-gold/45 bg-mtg-ink/95 shadow-[0_4px_14px_rgba(0,0,0,0.55)]"
+        }`}
+        style={teamStyle}
+        title={archenemy ? `${name} · Archenemy` : name}
       >
-        <p className="font-mono text-[9px] leading-none text-mtg-gold/70">
-          {index + 1}
+        <p
+          className={`font-mono text-[9px] leading-none ${
+            archenemy
+              ? "font-bold tracking-wider text-mtg-mana-r"
+              : "text-mtg-gold/70"
+          }`}
+          style={!archenemy && teamColor ? { color: teamColor } : undefined}
+        >
+          {archenemy ? "☠ AE" : index + 1}
         </p>
-        <p className="mt-0.5 truncate text-[11px] font-semibold leading-tight text-mtg-frost">
+        <p
+          className={`mt-0.5 truncate text-[11px] font-semibold leading-tight ${
+            archenemy ? "text-red-200" : "text-mtg-frost"
+          }`}
+        >
           {shortPlayerName(name, peers)}
         </p>
       </div>
@@ -75,8 +118,16 @@ function Seat({ name, index, total, peers = [] }) {
   );
 }
 
-function TableCard({ table, index }) {
+function TableCard({
+  table,
+  index,
+  twoHeaded = false,
+  archenemyMode = false,
+  teamColors = {},
+}) {
   const n = table.players.length;
+  const teamCount = table.teams?.length || Math.floor(n / 2);
+  const archName = table.archenemy || null;
   return (
     <motion.article
       layout
@@ -87,7 +138,9 @@ function TableCard({ table, index }) {
       <div className="mb-3 flex items-baseline justify-between gap-2">
         <h3 className="font-display text-xl text-mtg-gold-bright">{table.label}</h3>
         <span className="rounded-full border border-mtg-gold/30 bg-mtg-brand/30 px-2.5 py-0.5 text-xs text-mtg-frost/80">
-          {n} jugadores
+          {twoHeaded
+            ? `${teamCount} equipo${teamCount === 1 ? "" : "s"} · ${n}`
+            : `${n} jugadores`}
         </span>
       </div>
 
@@ -107,8 +160,14 @@ function TableCard({ table, index }) {
           <span className="font-display text-lg text-mtg-gold-bright/95">
             #{index + 1}
           </span>
-          <span className="mt-0.5 text-[10px] uppercase tracking-wider text-mtg-frost/40">
-            Commander
+          <span
+            className={`mt-0.5 text-[10px] uppercase tracking-wider ${
+              archenemyMode
+                ? "font-semibold text-mtg-mana-r/90"
+                : "text-mtg-frost/40"
+            }`}
+          >
+            {twoHeaded ? "2 cabezas" : archenemyMode ? "☠ Archenemy" : "Commander"}
           </span>
         </div>
 
@@ -119,17 +178,82 @@ function TableCard({ table, index }) {
             index={i}
             total={n}
             peers={table.players}
+            teamColor={
+              teamColors[String(name).toLocaleLowerCase("es")] || null
+            }
+            archenemy={
+              Boolean(
+                archName &&
+                  name.toLocaleLowerCase("es") ===
+                    String(archName).toLocaleLowerCase("es"),
+              )
+            }
           />
         ))}
       </div>
 
       <ol className="mt-4 space-y-1 border-t border-mtg-gold/15 pt-3 text-sm">
-        {table.players.map((name, i) => (
-          <li key={`${name}-${i}`} className="flex gap-2 text-mtg-frost/85">
-            <span className="font-mono text-xs text-mtg-gold/50">{i + 1}.</span>
-            <span>{name}</span>
-          </li>
-        ))}
+        {twoHeaded && table.teams?.length
+          ? table.teams.map((pair, ti) => {
+              const color =
+                teamColors[String(pair?.[0] || "").toLocaleLowerCase("es")] ||
+                teamColors[String(pair?.[1] || "").toLocaleLowerCase("es")] ||
+                twoHeadedTeamColor(ti);
+              return (
+                <li
+                  key={`${table.id}-team-${ti}`}
+                  className="flex items-start gap-2 rounded-md border-2 px-2 py-1.5"
+                  style={{
+                    borderColor: color,
+                    backgroundColor: "#0a1018",
+                    boxShadow: `inset 3px 0 0 ${color}`,
+                  }}
+                >
+                  <span
+                    className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: color }}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 text-mtg-frost/90">
+                    <span className="font-mono text-xs" style={{ color }}>
+                      Equipo {ti + 1}.
+                    </span>{" "}
+                    {pair[0]}{" "}
+                    <span style={{ color: `${color}cc` }}>//</span> {pair[1]}
+                  </span>
+                </li>
+              );
+            })
+          : table.players.map((name, i) => {
+              const isArch =
+                archName &&
+                name.toLocaleLowerCase("es") ===
+                  String(archName).toLocaleLowerCase("es");
+              return (
+                <li
+                  key={`${name}-${i}`}
+                  className={`flex gap-2 ${
+                    isArch ? "font-semibold text-mtg-mana-r" : "text-mtg-frost/85"
+                  }`}
+                >
+                  <span
+                    className={`font-mono text-xs ${
+                      isArch ? "text-mtg-mana-r" : "text-mtg-gold/50"
+                    }`}
+                  >
+                    {isArch ? "☠" : `${i + 1}.`}
+                  </span>
+                  <span>
+                    {name}
+                    {isArch ? (
+                      <span className="ml-1 text-[10px] uppercase tracking-wide text-mtg-mana-r/90">
+                        · Archenemy
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
       </ol>
     </motion.article>
   );
@@ -185,13 +309,28 @@ function NumberField({ label, value, min, max, onChange, hint }) {
 }
 
 export default function CommanderTables() {
-  const { participants, setTab } = useApp();
+  const { participants, setTab, config: appConfig, updateConfig } = useApp();
   const stored = loadCommander();
+
+  // Migración: flag antiguo de 2 cabezas → extraMode
+  useEffect(() => {
+    if (
+      stored?.config?.twoHeadedGiant &&
+      normalizeExtraMode(appConfig) === "none"
+    ) {
+      updateConfig({ extraMode: "twoHeaded" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [previousTables, setPreviousTables] = useState(
     stored?.previousTables ?? [],
   );
   const [tables, setTables] = useState(stored?.tables ?? []);
+  /** Jugadores / parejas en espera (solo con plano de sala y sobran plazas) */
+  const [waiting, setWaiting] = useState(() =>
+    Array.isArray(stored?.waiting) ? stored.waiting.map(String) : [],
+  );
   const [meta, setMeta] = useState(stored?.meta ?? null);
   const [cmdConfig, setCmdConfig] = useState(() =>
     normalizeCommanderConfig(stored?.config ?? COMMANDER_CONFIG_DEFAULTS),
@@ -256,59 +395,176 @@ export default function CommanderTables() {
 
   /** Misma lista activa que los sorteos / ruleta */
   const pool = participants;
+  /** Modos extra se configuran en Lista de Participantes */
+  const extraMode = normalizeExtraMode(appConfig);
+  const twoHG = extraMode === "twoHeaded";
+  const archenemyMode = extraMode === "archenemy";
+  const seatCount = useMemo(
+    () => poolSeatCount(pool, twoHG),
+    [pool, twoHG],
+  );
+  const teamCountPreview = twoHG ? Math.floor(seatCount / 2) : null;
+  const listLooksLike2HG =
+    pool.length > 0 && pool.every((p) => looksLikeTwoHeadedEntry(p));
 
   const roomSizes = useMemo(
     () => roomTableSizes(roomLayout).filter((n) => n > 0),
     [roomLayout],
   );
   const roomSeatTotal = useMemo(() => roomCapacity(roomLayout), [roomLayout]);
+  /** En 2HG solo cuentan sillas pares por mesa del plano */
+  const roomSizesEffective = useMemo(() => {
+    if (!twoHG) return roomSizes;
+    return roomSizes.map((n) => n - (n % 2)).filter((n) => n >= 2);
+  }, [roomSizes, twoHG]);
+  const roomSeatTotalEffective = useMemo(
+    () => roomSizesEffective.reduce((a, b) => a + b, 0),
+    [roomSizesEffective],
+  );
+
+  const baseCmdConfig = useMemo(
+    () =>
+      normalizeCommanderConfig({
+        ...cmdConfig,
+        twoHeadedGiant: twoHG,
+        archenemy: archenemyMode,
+        ...(twoHG
+          ? {
+              minPerTable: Math.max(4, cmdConfig.minPerTable),
+              maxPerTable: Math.max(4, cmdConfig.maxPerTable),
+            }
+          : {}),
+        ...(archenemyMode
+          ? { minPerTable: 4, maxPerTable: 4 }
+          : {}),
+      }),
+    [cmdConfig, twoHG, archenemyMode],
+  );
 
   const effectiveConfig = useMemo(() => {
-    if (!useRoomCapacity || !roomSizes.length) return cmdConfig;
-    const sum = roomSizes.reduce((a, b) => a + b, 0);
-    const seatMax = Math.max(...roomSizes);
-    const seatMin = Math.min(...roomSizes);
+    if (!useRoomCapacity || !roomSizesEffective.length) return baseCmdConfig;
+    const sum = roomSeatTotalEffective;
+    const seatMax = Math.max(...roomSizesEffective);
+    const seatMin = Math.min(...roomSizesEffective);
 
-    // Exactamente tantas sillas como jugadores → llenar el plano al completo
-    if (sum === pool.length) {
+    // Igual o más plazas que sillas → llenar el plano; el exceso espera
+    if (seatCount >= sum && sum > 0) {
       return {
         ...normalizeCommanderConfig({
-          ...cmdConfig,
-          minPerTable: Math.min(seatMin, cmdConfig.minPerTable),
-          maxPerTable: Math.max(seatMax, cmdConfig.maxPerTable),
+          ...baseCmdConfig,
+          minPerTable: Math.min(seatMin, baseCmdConfig.minPerTable),
+          maxPerTable: Math.max(seatMax, baseCmdConfig.maxPerTable),
         }),
-        exactSizes: roomSizes,
+        exactSizes: roomSizesEffective,
       };
     }
 
-    // Usa sillas reales por mesa del plano (incluye sillas extra que añadas).
-    // Si cabe en 3–4, reparte así; si no, aprovecha las sillas de más.
+    // Menos jugadores que sillas: reparte con capacidades del plano
     return {
       ...normalizeCommanderConfig({
-        ...cmdConfig,
+        ...baseCmdConfig,
         tableCountMode: "auto",
         preferLargerTables: true,
-        maxTableCount: roomSizes.length,
-        minPerTable: Math.min(cmdConfig.minPerTable, seatMin),
-        // No limitar al máx. de opciones si una mesa del plano tiene más sillas
-        maxPerTable: Math.max(cmdConfig.maxPerTable, seatMax),
+        maxTableCount: roomSizesEffective.length,
+        minPerTable: Math.min(baseCmdConfig.minPerTable, seatMin),
+        maxPerTable: Math.max(baseCmdConfig.maxPerTable, seatMax),
         allowOversizedFallback: true,
       }),
-      roomCapacities: roomSizes,
+      roomCapacities: roomSizesEffective,
     };
-  }, [useRoomCapacity, roomSizes, cmdConfig, pool.length]);
+  }, [
+    useRoomCapacity,
+    roomSizesEffective,
+    roomSeatTotalEffective,
+    baseCmdConfig,
+    seatCount,
+  ]);
 
-  const previewSizes = useMemo(
+  const twoHgRoomPreview = useMemo(() => {
+    if (!twoHG || !useRoomCapacity || !roomSizesEffective.length) return null;
+    try {
+      const teams = parseTwoHeadedTeams(pool);
+      return packTwoHeadedTeamsIntoRoom(teams, roomSizesEffective, {
+        minPerTable: baseCmdConfig.minPerTable,
+        maxPerTable: baseCmdConfig.maxPerTable,
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    twoHG,
+    useRoomCapacity,
+    roomSizesEffective,
+    pool,
+    baseCmdConfig.minPerTable,
+    baseCmdConfig.maxPerTable,
+  ]);
+
+  const archenemyRoomPreview = useMemo(() => {
+    if (!archenemyMode || !useRoomCapacity || !roomSizesEffective.length) {
+      return null;
+    }
+    return packFixedSizeIntoRoom(pool, roomSizesEffective, { tableSize: 4 });
+  }, [archenemyMode, useRoomCapacity, roomSizesEffective, pool]);
+
+  const playSeatCount = useMemo(() => {
+    if (twoHgRoomPreview) return twoHgRoomPreview.playTeamCount * 2;
+    if (archenemyRoomPreview) return archenemyRoomPreview.playCount;
+    if (useRoomCapacity && roomSeatTotalEffective > 0) {
+      return Math.min(seatCount, roomSeatTotalEffective);
+    }
+    return seatCount;
+  }, [
+    twoHgRoomPreview,
+    archenemyRoomPreview,
+    useRoomCapacity,
+    roomSeatTotalEffective,
+    seatCount,
+  ]);
+
+  const waitPreviewCount = useMemo(() => {
+    if (twoHgRoomPreview) return twoHgRoomPreview.waiting.length * 2;
+    if (archenemyRoomPreview) return archenemyRoomPreview.waiting.length;
+    if (!useRoomCapacity || roomSeatTotalEffective <= 0) return 0;
+    return Math.max(0, seatCount - roomSeatTotalEffective);
+  }, [
+    twoHgRoomPreview,
+    archenemyRoomPreview,
+    useRoomCapacity,
+    roomSeatTotalEffective,
+    seatCount,
+  ]);
+
+  const previewSizes = useMemo(() => {
+    if (twoHgRoomPreview) return twoHgRoomPreview.seatSizes;
+    if (archenemyRoomPreview) return archenemyRoomPreview.seatSizes;
+    const minOk =
+      playSeatCount >= (effectiveConfig.minPerTable || 1) ||
+      (Array.isArray(effectiveConfig.exactSizes) &&
+        effectiveConfig.exactSizes.length > 0 &&
+        playSeatCount > 0);
+    return minOk ? computeTableSizes(playSeatCount, effectiveConfig) : [];
+  }, [
+    twoHgRoomPreview,
+    archenemyRoomPreview,
+    playSeatCount,
+    effectiveConfig,
+  ]);
+
+  const {
+    seatPlayers,
+    tableLabels: roomLabels,
+    seatRoles,
+    seatTeamColors,
+  } = useMemo(() => mapPodsToRoom(tables, roomLayout), [tables, roomLayout]);
+
+  /** Un color distinto por pareja en todo el evento (Reparto + sala). */
+  const teamColorsByPlayer = useMemo(
     () =>
-      pool.length >= (effectiveConfig.minPerTable || 1)
-        ? computeTableSizes(pool.length, effectiveConfig)
-        : [],
-    [pool.length, effectiveConfig],
-  );
-
-  const { seatPlayers, tableLabels: roomLabels } = useMemo(
-    () => mapPodsToRoom(tables, roomLayout),
-    [tables, roomLayout],
+      meta?.twoHeadedGiant || tables.some((t) => t?.teams?.length)
+        ? buildTeamColorByPlayer(tables)
+        : {},
+    [tables, meta?.twoHeadedGiant],
   );
 
   useEffect(() => {
@@ -318,6 +574,7 @@ export default function CommanderTables() {
         JSON.stringify({
           previousTables,
           tables,
+          waiting,
           meta,
           config: cmdConfig,
           roomLayout,
@@ -336,6 +593,7 @@ export default function CommanderTables() {
   }, [
     previousTables,
     tables,
+    waiting,
     meta,
     cmdConfig,
     roomLayout,
@@ -398,6 +656,8 @@ export default function CommanderTables() {
       layout: roomLayout,
       seatPlayers,
       tableLabels: roomLabels,
+      seatRoles,
+      seatTeamColors,
       title: "Mesas Commander",
       roundLabel,
       roundNumber,
@@ -406,11 +666,14 @@ export default function CommanderTables() {
       roundTimerStarted,
       showSalaRoundLabel,
       showSalaRoundTimer,
+      waiting,
     });
   }, [
     roomLayout,
     seatPlayers,
     roomLabels,
+    seatRoles,
+    seatTeamColors,
     roundLabel,
     roundNumber,
     roundStartedAt,
@@ -418,6 +681,7 @@ export default function CommanderTables() {
     roundTimerStarted,
     showSalaRoundLabel,
     showSalaRoundTimer,
+    waiting,
   ]);
 
   useEffect(() => {
@@ -537,40 +801,53 @@ export default function CommanderTables() {
   const handleGenerate = () => {
     setError("");
     try {
-      if (useRoomCapacity && roomSeatTotal > 0 && pool.length > roomSeatTotal) {
-        throw new Error(
-          `Hay ${pool.length} jugadores y solo ${roomSeatTotal} sillas en la sala. Añade sillas o reduce la lista.`,
-        );
-      }
-
       const result = assignCommanderTables(
         pool,
         previousTables,
         effectiveConfig,
         avoidPairs,
+        waiting,
       );
       setTables(result.tables);
+      setWaiting(result.waiting || []);
       setMeta({
         attempts: result.attempts,
         entropy: result.entropy,
         sizes: result.sizes,
         relaxed: result.relaxed,
         playerCount: result.playerCount,
+        teamCount: result.teamCount,
+        waitingCount: (result.waiting || []).length,
+        twoHeadedGiant: twoHG,
+        archenemy: archenemyMode,
         at: Date.now(),
       });
+      const waitN = (result.waiting || []).length;
       if (result.relaxed) {
         setToast(
-          "No se encontró reparto perfecto anti-repetición a tiempo; se usó el mejor random posible.",
+          "No se encontró reparto perfecto anti-repetición a tiempo; se usó el mejor random posible." +
+            (waitN
+              ? ` ${waitN} en espera hasta la siguiente ronda.`
+              : ""),
+        );
+      } else if (waitN) {
+        setToast(
+          `Mesas generadas · ${waitN} ${
+            twoHG ? "pareja" : "jugador"
+          }${waitN === 1 ? "" : twoHG ? "s" : "es"} en espera (prioridad la próxima ronda).`,
         );
       } else {
         setToast(
-          `Mesas generadas en ${result.attempts} intento${result.attempts === 1 ? "" : "s"}.`,
+          archenemyMode
+            ? `Mesas Archenemy generadas (${result.tables.length}×4).`
+            : `Mesas generadas en ${result.attempts} intento${result.attempts === 1 ? "" : "s"}.`,
         );
       }
-      setTimeout(() => setToast(""), 4000);
+      setTimeout(() => setToast(""), 4500);
     } catch (e) {
       setError(e.message || "Error al generar mesas");
       setTables([]);
+      setWaiting([]);
       setMeta(null);
     }
   };
@@ -590,6 +867,7 @@ export default function CommanderTables() {
 
   const clearCurrent = () => {
     setTables([]);
+    setWaiting([]);
     setMeta(null);
   };
 
@@ -834,13 +1112,26 @@ export default function CommanderTables() {
                 </div>
               </div>
             )}
-            <RoomDesigner
-              layout={roomLayout}
-              onChange={setRoomLayout}
-              editable={viewMode === "diseno"}
-              seatPlayers={viewMode === "sala" ? seatPlayers : {}}
-              tableLabels={viewMode === "sala" ? roomLabels : {}}
-            />
+            <div
+              className={
+                viewMode === "sala" && waiting.length > 0
+                  ? "grid gap-3 lg:grid-cols-[1fr_220px] lg:items-start"
+                  : ""
+              }
+            >
+              <RoomDesigner
+                layout={roomLayout}
+                onChange={setRoomLayout}
+                editable={viewMode === "diseno"}
+                seatPlayers={viewMode === "sala" ? seatPlayers : {}}
+                tableLabels={viewMode === "sala" ? roomLabels : {}}
+                seatRoles={viewMode === "sala" ? seatRoles : {}}
+                seatTeamColors={viewMode === "sala" ? seatTeamColors : {}}
+              />
+              {viewMode === "sala" && (
+                <WaitingBench waiting={waiting} className="lg:sticky lg:top-24" />
+              )}
+            </div>
             <AnimatePresence>
               {toast && viewMode !== "reparto" && (
                 <motion.p
@@ -997,12 +1288,29 @@ export default function CommanderTables() {
                   label="Usar plano de sala"
                   description={
                     roomSeatTotal
-                      ? `Sillas por mesa: ${roomSizes.join("+")} (${roomSeatTotal} total). Prefiere 3–4; si hace falta, usa las sillas extra.`
+                      ? `Sillas por mesa: ${roomSizes.join("+")} (${roomSeatTotal} total). Si sobra gente, esperan la siguiente ronda (prioridad al regenerar).`
                       : "Diseña la sala primero para fijar mesas y sillas"
                   }
                   checked={useRoomCapacity}
                   onChange={setUseRoomCapacity}
                 />
+
+                <p className="md:col-span-2 rounded-lg border border-mtg-gold/15 bg-mtg-void/35 px-3 py-2 text-xs text-mtg-frost/55">
+                  <span className="text-mtg-frost/80">Modos Extra</span> (Dos
+                  Cabezas / Archenemy) se eligen en{" "}
+                  <button
+                    type="button"
+                    className="underline text-mtg-gold"
+                    onClick={() => setTab("participantes")}
+                  >
+                    Lista de Participantes
+                  </button>
+                  {extraMode === "none"
+                    ? " · ahora: Commander normal."
+                    : extraMode === "twoHeaded"
+                      ? " · ahora: Dos Cabezas."
+                      : " · ahora: Archenemy."}
+                </p>
 
                 <Toggle
                   label="Mostrar nombre de ronda"
@@ -1058,12 +1366,23 @@ export default function CommanderTables() {
               </div>
               <p className="mt-2">
                 <strong className="text-mtg-gold-bright text-lg">
-                  {pool.length}
+                  {twoHG ? teamCountPreview ?? pool.length : pool.length}
                 </strong>{" "}
                 <span className="text-mtg-frost/50">
-                  (compartidos con Sorteo / Ruleta)
+                  {twoHG
+                    ? `pareja${(teamCountPreview ?? 0) === 1 ? "" : "s"} · ${seatCount} jugadores`
+                    : "(compartidos con Sorteo / Ruleta)"}
                 </span>
               </p>
+              {twoHG && pool.length > 0 && !listLooksLike2HG && (
+                <p className="mt-2 text-xs text-mtg-ember">
+                  Modo 2 cabezas activo: cada línea debe ser{" "}
+                  <span className="font-mono text-mtg-frost/80">
+                    Nombre A // Nombre B
+                  </span>
+                  .
+                </p>
+              )}
               {pool.length > 0 ? (
                 <p className="mt-2 max-h-28 overflow-auto text-xs text-mtg-frost/60">
                   {pool.join(" · ")}
@@ -1083,6 +1402,8 @@ export default function CommanderTables() {
               )}
               <p className="mt-2 text-xs text-mtg-frost/50">
                 Reglas: min {cmdConfig.minPerTable} · máx {cmdConfig.maxPerTable}
+                {twoHG ? " · Dos Cabezas" : ""}
+                {archenemyMode ? " · Archenemy (solo 4)" : ""}
                 {cmdConfig.tableCountMode === "fixed"
                   ? ` · ${cmdConfig.fixedTableCount} mesas fijas`
                   : " · mesas automáticas"}
@@ -1090,12 +1411,27 @@ export default function CommanderTables() {
                   ? ` · anti-rep ≤${cmdConfig.maxRepeatFromPrevious}`
                   : " · sin anti-rep"}
               </p>
+              {waitPreviewCount > 0 && (
+                <p className="mt-1 text-xs text-mtg-ember">
+                  Con el plano activo, {waitPreviewCount}{" "}
+                  {twoHG
+                    ? `plaza${waitPreviewCount === 1 ? "" : "s"} (${Math.ceil(waitPreviewCount / 2)} pareja${Math.ceil(waitPreviewCount / 2) === 1 ? "" : "s"})`
+                    : `jugador${waitPreviewCount === 1 ? "" : "es"}`}{" "}
+                  quedarán en espera esta ronda.
+                </p>
+              )}
               {previewSizes.length > 0 ? (
                 <p className="mt-1">
                   <span className="text-mtg-frost/50">Reparto previsto:</span>{" "}
                   <strong className="text-mtg-frost">
                     {formatSizes(previewSizes)}
                   </strong>
+                  {playSeatCount < seatCount && (
+                    <span className="text-mtg-frost/45">
+                      {" "}
+                      · {playSeatCount} juegan
+                    </span>
+                  )}
                   {" → "}
                   {previewSizes
                     .map(
@@ -1166,9 +1502,10 @@ export default function CommanderTables() {
                 className="accent-mtg-gold"
               />
               Usar plano de sala
-              {roomSeatTotal > 0 && (
+              {(twoHG ? roomSeatTotalEffective : roomSeatTotal) > 0 && (
                 <span className="text-xs text-mtg-frost/45">
-                  ({roomSeatTotal} sillas)
+                  ({twoHG ? roomSeatTotalEffective : roomSeatTotal} sillas
+                  {twoHG ? " pares" : ""})
                 </span>
               )}
             </label>
@@ -1179,11 +1516,12 @@ export default function CommanderTables() {
                 className="btn-primary rounded-xl px-6 py-3 text-base"
                 onClick={handleGenerate}
                 disabled={
-                  pool.length < effectiveConfig.minPerTable ||
-                  !previewSizes.length ||
-                  (useRoomCapacity &&
-                    roomSeatTotal > 0 &&
-                    pool.length > roomSeatTotal)
+                  (playSeatCount < effectiveConfig.minPerTable &&
+                    !(
+                      Array.isArray(effectiveConfig.exactSizes) &&
+                      effectiveConfig.exactSizes.length
+                    )) ||
+                  !previewSizes.length
                 }
               >
                 ¡Generar mesas!
@@ -1235,19 +1573,33 @@ export default function CommanderTables() {
                   <dd>{formatSizes(meta.sizes || [])}</dd>
                 </div>
                 <div>
-                  <dt className="text-mtg-frost/45">Jugadores</dt>
-                  <dd>{meta.playerCount}</dd>
+                  <dt className="text-mtg-frost/45">
+                    {meta.twoHeadedGiant || meta.teamCount
+                      ? "Plazas"
+                      : "Jugadores"}
+                  </dt>
+                  <dd>
+                    {meta.playerCount}
+                    {meta.teamCount != null
+                      ? ` (${meta.teamCount} eq.)`
+                      : ""}
+                  </dd>
                 </div>
               </dl>
             )}
 
-            {useRoomCapacity && roomSeatTotal > 0 && (
+            {useRoomCapacity &&
+              (twoHG ? roomSeatTotalEffective : roomSeatTotal) > 0 && (
               <p className="text-xs text-mtg-frost/50">
-                Plano: {roomSizes.length} mesas · {roomSeatTotal} sillas
-                {pool.length === roomSeatTotal
+                Plano: {roomSizes.length} mesas ·{" "}
+                {twoHG ? roomSeatTotalEffective : roomSeatTotal} sillas
+                {twoHG ? " (pares)" : ""}
+                {seatCount ===
+                (twoHG ? roomSeatTotalEffective : roomSeatTotal)
                   ? " · coinciden con la lista"
-                  : pool.length > roomSeatTotal
-                    ? " · faltan sillas"
+                  : seatCount >
+                      (twoHG ? roomSeatTotalEffective : roomSeatTotal)
+                    ? " · sobran jugadores (esperarán)"
                     : " · hay sillas libres"}
                 . El resultado se muestra aquí; el plano está en{" "}
                 <button
@@ -1265,10 +1617,23 @@ export default function CommanderTables() {
         )}
       </section>
 
+      {viewMode === "reparto" && waiting.length > 0 && (
+        <WaitingBench waiting={waiting} />
+      )}
+
       {viewMode === "reparto" && tables.length > 0 && (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {tables.map((table, i) => (
-            <TableCard key={table.id} table={table} index={i} />
+            <TableCard
+              key={table.id}
+              table={table}
+              index={i}
+              twoHeaded={Boolean(meta?.twoHeadedGiant || table.teams)}
+              archenemyMode={Boolean(
+                meta?.archenemy || table.archenemy || archenemyMode,
+              )}
+              teamColors={teamColorsByPlayer}
+            />
           ))}
         </section>
       )}

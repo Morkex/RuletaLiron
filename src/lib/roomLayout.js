@@ -1,5 +1,7 @@
 /** Layout de sala: mesas (rectángulos) + sillas (asientos) en % del lienzo. */
 
+import { buildTeamColorByPlayer } from "./commanderTables";
+
 export const TABLE_COLORS = [
   { id: "ink", label: "Negro", value: "#1c1c1e" },
   { id: "walnut", label: "Nogal", value: "#6b4423" },
@@ -402,14 +404,24 @@ export function roomTableSizes(layout) {
 
 /**
  * Asigna pods generados a mesas físicas de la sala (mejor ajuste por capacidad).
- * @returns {{ seatPlayers: Record<string,string>, tableLabels: Record<string,string> }}
+ * @returns {{
+ *   seatPlayers: Record<string,string>,
+ *   tableLabels: Record<string,string>,
+ *   seatRoles: Record<string,string>,
+ *   seatTeamColors: Record<string,string>,
+ * }}
  */
 export function mapPodsToRoom(pods, layout) {
   const seatPlayers = {};
   const tableLabels = {};
+  const seatRoles = {};
+  const seatTeamColors = {};
   if (!pods?.length || !layout?.tables?.length) {
-    return { seatPlayers, tableLabels };
+    return { seatPlayers, tableLabels, seatRoles, seatTeamColors };
   }
+
+  // Colores únicos por equipo en todo el evento (mismo orden que en Reparto).
+  const colorByPlayer = buildTeamColorByPlayer(pods);
 
   const physical = layout.tables
     .map((t) => ({
@@ -426,6 +438,9 @@ export function mapPodsToRoom(pods, layout) {
   const used = new Set();
   for (const pod of logical) {
     const players = pod.players || [];
+    const archKey = pod.archenemy
+      ? String(pod.archenemy).toLocaleLowerCase("es")
+      : null;
     let bestIdx = -1;
     let bestScore = Infinity;
     for (let i = 0; i < physical.length; i++) {
@@ -444,11 +459,19 @@ export function mapPodsToRoom(pods, layout) {
     const { table, seats } = physical[bestIdx];
     tableLabels[table.id] = pod.label || table.label;
     players.forEach((name, i) => {
-      if (seats[i]) seatPlayers[seats[i].id] = name;
+      if (!seats[i]) return;
+      const seatId = seats[i].id;
+      seatPlayers[seatId] = name;
+      const nameKey = String(name).toLocaleLowerCase("es");
+      if (archKey && nameKey === archKey) {
+        seatRoles[seatId] = "archenemy";
+      }
+      const teamColor = colorByPlayer[nameKey];
+      if (teamColor) seatTeamColors[seatId] = teamColor;
     });
   }
 
-  return { seatPlayers, tableLabels };
+  return { seatPlayers, tableLabels, seatRoles, seatTeamColors };
 }
 
 /** @deprecated usar mapPodsToRoom */

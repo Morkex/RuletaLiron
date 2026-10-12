@@ -124,3 +124,51 @@ export function parseParticipants(rawText) {
 
   return names;
 }
+
+const PAIR_SEP = /\s*\/\/\s*/;
+
+function splitPairLine(entry) {
+  return String(entry || "")
+    .split(PAIR_SEP)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function isAlreadyPaired(entry) {
+  return splitPairLine(entry).length === 2;
+}
+
+/**
+ * En Dos Cabezas: si la lista viene como nombres sueltos (uno por línea),
+ * empareja consecutivos → «nombre1 // nombre2», «nombre3 // nombre4», …
+ * Si ya vienen con //, se respetan.
+ */
+export function coerceTwoHeadedPairs(names) {
+  const list = (names || []).map((n) => String(n).trim()).filter(Boolean);
+  if (!list.length) return [];
+
+  if (list.every(isAlreadyPaired)) return list;
+
+  const flat = [];
+  const seen = new Set();
+  for (const entry of list) {
+    const parts = splitPairLine(entry);
+    const members = parts.length >= 2 ? parts : [entry];
+    for (const m of members) {
+      const key = m.toLocaleLowerCase("es");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      flat.push(m);
+    }
+  }
+
+  const pairs = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    if (i + 1 < flat.length) {
+      pairs.push(`${flat[i]} // ${flat[i + 1]}`);
+    } else {
+      pairs.push(flat[i]);
+    }
+  }
+  return pairs;
+}

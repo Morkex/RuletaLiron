@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import RoomDesigner from "./RoomDesigner";
+import WaitingBench from "./WaitingBench";
 import {
   loadSalaDisplay,
   publishSalaRoundStart,
@@ -102,6 +103,9 @@ export default function RoomDisplayScreen() {
   );
   const seatPlayers = snap?.seatPlayers ?? {};
   const tableLabels = snap?.tableLabels ?? {};
+  const seatRoles = snap?.seatRoles ?? {};
+  const seatTeamColors = snap?.seatTeamColors ?? {};
+  const waiting = Array.isArray(snap?.waiting) ? snap.waiting : [];
   const hasPlayers = Object.keys(seatPlayers).length > 0;
 
   const showLabel = snap?.showSalaRoundLabel !== false;
@@ -203,13 +207,25 @@ export default function RoomDisplayScreen() {
             Esperando el reparto desde la mesa de control…
           </p>
         ) : null}
-        <div className="mx-auto w-full max-w-[1600px] flex-1">
+        <div
+          className={`mx-auto w-full max-w-[1600px] flex-1 ${
+            waiting.length
+              ? "grid gap-4 lg:grid-cols-[1fr_240px] lg:items-start"
+              : ""
+          }`}
+        >
           <RoomDesigner
             layout={layout}
             editable={false}
             seatPlayers={seatPlayers}
             tableLabels={tableLabels}
+            seatRoles={seatRoles}
+            seatTeamColors={seatTeamColors}
             presentation
+          />
+          <WaitingBench
+            waiting={waiting}
+            className="lg:sticky lg:top-4"
           />
         </div>
       </main>

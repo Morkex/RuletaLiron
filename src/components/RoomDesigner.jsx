@@ -28,6 +28,8 @@ export default function RoomDesigner({
   editable = false,
   seatPlayers = {},
   tableLabels = {},
+  seatRoles = {},
+  seatTeamColors = {},
   presentation = false,
 }) {
   const canvasRef = useRef(null);
@@ -412,12 +414,22 @@ export default function RoomDesigner({
 
         {layout.seats.map((seat) => {
           const player = seatPlayers[seat.id];
+          const isArchenemy = seatRoles?.[seat.id] === "archenemy";
+          const teamColor = seatTeamColors?.[seat.id] || null;
           const selected =
             selectedKind === "seat" && selectedId === seat.id;
           return (
             <div
               key={seat.id}
-              title={player || (editable ? "Silla" : "Vacío")}
+              title={
+                player
+                  ? isArchenemy
+                    ? `${player} · Archenemy`
+                    : player
+                  : editable
+                    ? "Silla"
+                    : "Vacío"
+              }
               onPointerDown={(e) => {
                 if (editable && tool === "select") startDragSeat(e, seat);
                 else e.stopPropagation();
@@ -435,28 +447,72 @@ export default function RoomDesigner({
                     ? "h-11 w-11 md:h-14 md:w-14"
                     : "h-8 w-8 md:h-9 md:w-9"
                 } ${
-                  player
-                    ? "border-mtg-gold bg-mtg-brand text-mtg-gold-bright"
-                    : "border-rose-400/80 bg-mtg-frost text-mtg-ink"
+                  isArchenemy
+                    ? "border-mtg-mana-r bg-gradient-to-b from-[#5a1515] to-black text-mtg-mana-r shadow-[0_0_16px_rgba(196,107,90,0.65)]"
+                    : player && !teamColor
+                      ? "border-mtg-gold bg-mtg-brand text-mtg-gold-bright"
+                      : player && teamColor
+                        ? "text-mtg-frost"
+                        : "border-rose-400/80 bg-mtg-frost text-mtg-ink"
                 } ${selected ? "ring-2 ring-mtg-gold-bright" : ""}`}
+                style={
+                  player && teamColor && !isArchenemy
+                    ? {
+                        borderColor: teamColor,
+                        backgroundColor: "#0a1018",
+                        boxShadow: `0 0 0 1px ${teamColor}, 0 4px 12px rgba(0,0,0,0.65)`,
+                        color: teamColor,
+                      }
+                    : undefined
+                }
               >
-                <ChairIcon
-                  className={
-                    presentation
-                      ? "h-5 w-5 md:h-6 md:w-6"
-                      : "h-3.5 w-3.5 md:h-4 md:w-4"
-                  }
-                />
+                {isArchenemy ? (
+                  <span
+                    className={
+                      presentation
+                        ? "text-base font-black md:text-lg"
+                        : "text-xs font-black"
+                    }
+                    aria-hidden
+                  >
+                    ☠
+                  </span>
+                ) : (
+                  <ChairIcon
+                    className={
+                      presentation
+                        ? "h-5 w-5 md:h-6 md:w-6"
+                        : "h-3.5 w-3.5 md:h-4 md:w-4"
+                    }
+                  />
+                )}
               </div>
               {player && (
                 <span
-                  className={`mt-0.5 truncate rounded-md border border-mtg-gold/35 bg-mtg-ink/95 text-center font-bold leading-tight text-mtg-frost shadow-md ${
+                  className={`mt-0.5 truncate rounded-md border text-center font-bold leading-tight shadow-md ${
+                    isArchenemy
+                      ? "border-mtg-mana-r/70 bg-gradient-to-r from-[#3a0a0a] to-black text-red-200 shadow-[0_0_10px_rgba(196,107,90,0.4)]"
+                      : teamColor
+                        ? "text-mtg-frost"
+                        : "border-mtg-gold/35 bg-mtg-ink/95 text-mtg-frost"
+                  } ${
                     presentation
                       ? "max-w-[160px] px-2.5 py-1 text-sm md:max-w-[200px] md:text-base"
                       : "max-w-[120px] px-2 py-0.5 text-xs md:max-w-[150px] md:text-sm"
                   }`}
-                  title={player}
+                  style={
+                    teamColor && !isArchenemy
+                      ? {
+                          borderColor: teamColor,
+                          backgroundColor: "#0a1018",
+                          color: "#f5f5f5",
+                          boxShadow: `0 0 0 1px ${teamColor}, 0 3px 10px rgba(0,0,0,0.65)`,
+                        }
+                      : undefined
+                  }
+                  title={isArchenemy ? `${player} · Archenemy` : player}
                 >
+                  {isArchenemy ? "☠ " : ""}
                   {shortPlayerName(player, peerNames)}
                 </span>
               )}

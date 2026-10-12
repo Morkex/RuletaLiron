@@ -133,10 +133,29 @@ export default function AppDocs({ open, onClose }) {
                 ],
                 [
                   "Opciones",
-                  "Reglas del algoritmo: min/máx por mesa, anti-repetición, plano de sala, mostrar nombre de ronda y cronómetro.",
+                  "Reglas del algoritmo: min/máx por mesa, anti-repetición, plano de sala, 2 cabezas, mostrar nombre de ronda y cronómetro.",
                 ],
               ]}
             />
+            <h4 className="mb-1.5 mt-4 font-display text-sm text-mtg-gold">
+              Modos Extra
+            </h4>
+            <p className="mb-2">
+              En Lista de Participantes, el desplegable{" "}
+              <Em>Modos Extra</Em> permite un solo modo a la vez (o ninguno =
+              Commander normal):
+            </p>
+            <ul className="mb-2 list-disc space-y-1 pl-5">
+              <li>
+                <Em>Dos Cabezas</Em>: cada línea es un equipo{" "}
+                <code className="text-mtg-gold/80">A // B</code>; la pareja no
+                se separa. Mesas típicas de 4 (2 equipos).
+              </li>
+              <li>
+                <Em>Archenemy</Em>: solo mesas de 4; en cada una un jugador
+                aleatorio es el Archenemy (marcado en el reparto y el plano).
+              </li>
+            </ul>
             <h4 className="mb-1.5 mt-4 font-display text-sm text-mtg-gold">
               Flujo típico de una noche
             </h4>
@@ -148,6 +167,13 @@ export default function AppDocs({ open, onClose }) {
               </li>
               <li>
                 En Reparto pulsa <Em>¡Generar mesas!</Em>
+              </li>
+              <li>
+                Con <Em>Usar plano de sala</Em>, si hay más jugadores que
+                sillas, el exceso queda en espera (Recuadro en Reparto y en el
+                plano / pantalla de sala) y tendrá prioridad la siguiente
+                ronda. Sin plano, no hay espera: hay que poder repartir a
+                todos.
               </li>
               <li>
                 Si quieres anti-repetición en la siguiente ronda:{" "}

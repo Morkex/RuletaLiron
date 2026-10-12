@@ -31,6 +31,8 @@ export function publishSalaDisplay(payload) {
     layout: payload.layout ?? { tables: [], seats: [] },
     seatPlayers: payload.seatPlayers ?? {},
     tableLabels: payload.tableLabels ?? {},
+    seatRoles: payload.seatRoles ?? {},
+    seatTeamColors: payload.seatTeamColors ?? {},
     title: payload.title || "Mesas Commander",
     roundLabel: payload.roundLabel || "Ronda 1",
     roundNumber: Number(payload.roundNumber) || 1,
@@ -43,6 +45,9 @@ export function publishSalaDisplay(payload) {
     roundTimerStarted: Boolean(payload.roundTimerStarted),
     showSalaRoundLabel: payload.showSalaRoundLabel !== false,
     showSalaRoundTimer: payload.showSalaRoundTimer !== false,
+    waiting: Array.isArray(payload.waiting)
+      ? payload.waiting.map(String).filter(Boolean)
+      : [],
     at: Date.now(),
   };
   try {
